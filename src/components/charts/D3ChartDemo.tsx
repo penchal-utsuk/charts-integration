@@ -1,20 +1,44 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ZoomIn, ZoomOut } from 'lucide-react';
 import { sampleData, aggregateDataByDimension } from '@/data/sampleData';
 
-// D3-style implementation using SVG
 const D3ChartDemo = () => {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [currentView, setCurrentView] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [breadcrumb, setBreadcrumb] = useState<string[]>(['Revenue by Product']);
+  const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
+  const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+
+  const getNextLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
+    const hierarchy = ['product', 'month', 'quarter', 'region'];
+    const currentIndex = hierarchy.indexOf(current);
+    return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
+  };
+
+  const getFilteredData = () => {
+    let filteredData = [...sampleData];
+    
+    drilldownPath.forEach(({ level, value }) => {
+      if (level === 'product') {
+        filteredData = filteredData.filter(item => item.product_name === value);
+      } else if (level === 'month') {
+        filteredData = filteredData.filter(item => item.month.toString() === value);
+      } else if (level === 'quarter') {
+        filteredData = filteredData.filter(item => item.quarter.toString() === value);
+      } else if (level === 'region') {
+        filteredData = filteredData.filter(item => item.region === value);
+      }
+    });
+    
+    return aggregateDataByDimension(filteredData, currentLevel);
+  };
 
   const drawChart = (data: Array<{name: string, revenue: number}>) => {
     const svg = svgRef.current;
     if (!svg) return;
     
-    // Clear previous content
     while (svg.firstChild) {
       svg.removeChild(svg.firstChild);
     }
@@ -28,18 +52,17 @@ const D3ChartDemo = () => {
     svg.setAttribute('width', width.toString());
     svg.setAttribute('height', height.toString());
     
-    // Create scales
+    // Create main group with zoom and pan
+    const mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    mainGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`);
+    svg.appendChild(mainGroup);
+    
     const maxValue = Math.max(...data.map(d => d.revenue));
     const xScale = (index: number) => margin.left + (index * chartWidth) / data.length;
     const yScale = (value: number) => margin.top + chartHeight - (value / maxValue) * chartHeight;
     const barWidth = chartWidth / data.length * 0.8;
     
-    // Colors
     const colors = ['#ff7300', '#ff8c42', '#ffa85c', '#ffbc7a', '#ffd09b', '#ffe4be'];
-    
-    // Create chart group
-    const chartGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    svg.appendChild(chartGroup);
     
     // Draw bars
     data.forEach((item, index) => {
@@ -47,15 +70,34 @@ const D3ChartDemo = () => {
       const x = xScale(index);
       const y = yScale(item.revenue);
       
-      // Create bar
+      // Bar group for click handling
+      const barGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      barGroup.style.cursor = 'pointer';
+      barGroup.addEventListener('click', () => handleDrillDown(item.name));
+      
+      // Bar rectangle
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       rect.setAttribute('x', x.toString());
       rect.setAttribute('y', y.toString());
       rect.setAttribute('width', barWidth.toString());
       rect.setAttribute('height', barHeight.toString());
       rect.setAttribute('fill', colors[index % colors.length]);
-      rect.setAttribute('class', 'hover:opacity-80 transition-opacity cursor-pointer');
-      chartGroup.appendChild(rect);
+      rect.setAttribute('stroke', '#fff');
+      rect.setAttribute('stroke-width', '2');
+      rect.setAttribute('class', 'hover:opacity-80 transition-opacity');
+      
+      // Hover effects
+      rect.addEventListener('mouseenter', () => {
+        rect.setAttribute('opacity', '0.8');
+        rect.setAttribute('transform', 'scale(1.02)');
+        rect.setAttribute('transform-origin', `${x + barWidth/2} ${y + barHeight/2}`);
+      });
+      rect.addEventListener('mouseleave', () => {
+        rect.setAttribute('opacity', '1');
+        rect.setAttribute('transform', 'scale(1)');
+      });
+      
+      barGroup.appendChild(rect);
       
       // Value label
       const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -64,8 +106,9 @@ const D3ChartDemo = () => {
       valueText.setAttribute('text-anchor', 'middle');
       valueText.setAttribute('font-size', '12');
       valueText.setAttribute('fill', '#333');
+      valueText.setAttribute('pointer-events', 'none');
       valueText.textContent = `$${item.revenue.toLocaleString()}`;
-      chartGroup.appendChild(valueText);
+      barGroup.appendChild(valueText);
       
       // Name label
       const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -75,11 +118,16 @@ const D3ChartDemo = () => {
       nameText.setAttribute('font-size', '11');
       nameText.setAttribute('fill', '#666');
       nameText.setAttribute('transform', `rotate(-45, ${x + barWidth/2}, ${margin.top + chartHeight + 20})`);
+      nameText.setAttribute('pointer-events', 'none');
       nameText.textContent = item.name;
-      chartGroup.appendChild(nameText);
+      barGroup.appendChild(nameText);
+      
+      mainGroup.appendChild(barGroup);
     });
     
     // Title
+    const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
+    const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     title.setAttribute('x', (width/2).toString());
     title.setAttribute('y', '25');
@@ -87,7 +135,7 @@ const D3ChartDemo = () => {
     title.setAttribute('font-size', '16');
     title.setAttribute('font-weight', 'bold');
     title.setAttribute('fill', '#333');
-    title.textContent = `Revenue by ${currentView.charAt(0).toUpperCase() + currentView.slice(1)}`;
+    title.textContent = `Revenue by ${levelName}${pathString}`;
     svg.appendChild(title);
     
     // Axes
@@ -98,7 +146,7 @@ const D3ChartDemo = () => {
     yAxis.setAttribute('y2', (margin.top + chartHeight).toString());
     yAxis.setAttribute('stroke', '#ccc');
     yAxis.setAttribute('stroke-width', '1');
-    svg.appendChild(yAxis);
+    mainGroup.appendChild(yAxis);
     
     const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     xAxis.setAttribute('x1', margin.left.toString());
@@ -107,85 +155,90 @@ const D3ChartDemo = () => {
     xAxis.setAttribute('y2', (margin.top + chartHeight).toString());
     xAxis.setAttribute('stroke', '#ccc');
     xAxis.setAttribute('stroke-width', '1');
-    svg.appendChild(xAxis);
+    mainGroup.appendChild(xAxis);
   };
 
-  const handleDrillDown = (dimension: 'product' | 'month' | 'quarter' | 'region') => {
-    setCurrentView(dimension);
-    const dimensionName = dimension.charAt(0).toUpperCase() + dimension.slice(1);
-    setBreadcrumb([...breadcrumb, `Revenue by ${dimensionName}`]);
+  const handleDrillDown = (value: string) => {
+    const nextLevel = getNextLevel(currentLevel);
+    if (!nextLevel) return;
+    
+    setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
+    setCurrentLevel(nextLevel);
   };
 
   const handleBreadcrumbClick = (index: number) => {
+    const newPath = drilldownPath.slice(0, index);
+    setDrilldownPath(newPath);
+    
     if (index === 0) {
-      setCurrentView('product');
-      setBreadcrumb(['Revenue by Product']);
+      setCurrentLevel('product');
+    } else {
+      const hierarchy = ['product', 'month', 'quarter', 'region'];
+      const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
+      setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
   };
 
+  const handleZoom = (delta: number) => {
+    setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
+  };
+
   useEffect(() => {
-    const data = aggregateDataByDimension(sampleData, currentView);
+    const data = getFilteredData();
     drawChart(data);
-  }, [currentView]);
+  }, [currentLevel, drilldownPath, zoomLevel, panOffset]);
+
+  const breadcrumbItems = [
+    { level: 'product', value: 'All Products' },
+    ...drilldownPath
+  ];
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          {breadcrumb.map((item, index) => (
+          {breadcrumbItems.map((item, index) => (
             <React.Fragment key={index}>
               {index > 0 && <span className="text-gray-400">/</span>}
               <button
                 onClick={() => handleBreadcrumbClick(index)}
-                className={`text-sm ${index === breadcrumb.length - 1 ? 'font-semibold text-gray-900' : 'text-blue-600 hover:text-blue-800'}`}
+                className={`text-sm ${index === breadcrumbItems.length - 1 ? 'font-semibold text-gray-900' : 'text-blue-600 hover:text-blue-800'}`}
               >
-                {item}
+                {item.value}
               </button>
             </React.Fragment>
           ))}
         </div>
-        {breadcrumb.length > 1 && (
+        
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handleBreadcrumbClick(0)}
+            onClick={() => handleZoom(-0.2)}
             className="flex items-center gap-1"
           >
-            <ChevronLeft className="w-4 h-4" />
-            Back to Overview
+            <ZoomOut className="w-4 h-4" />
           </Button>
-        )}
-      </div>
-      
-      <div className="grid grid-cols-4 gap-2 mb-4">
-        <Button
-          variant={currentView === 'product' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('product')}
-        >
-          By Product
-        </Button>
-        <Button
-          variant={currentView === 'month' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('month')}
-        >
-          By Month
-        </Button>
-        <Button
-          variant={currentView === 'quarter' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('quarter')}
-        >
-          By Quarter
-        </Button>
-        <Button
-          variant={currentView === 'region' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('region')}
-        >
-          By Region
-        </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleZoom(0.2)}
+            className="flex items-center gap-1"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </Button>
+          {drilldownPath.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBreadcrumbClick(0)}
+              className="flex items-center gap-1"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Reset
+            </Button>
+          )}
+        </div>
       </div>
       
       <div className="flex justify-center">
@@ -197,8 +250,8 @@ const D3ChartDemo = () => {
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>D3.js-style Implementation:</strong> Built with SVG for scalable vector graphics. 
-        Offers maximum flexibility and customization with data-driven document manipulation.
+        <strong>D3.js-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
+        Use zoom controls for better visualization. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );

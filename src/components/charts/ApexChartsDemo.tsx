@@ -1,23 +1,46 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ZoomIn, ZoomOut } from 'lucide-react';
 import { sampleData, aggregateDataByDimension } from '@/data/sampleData';
 
-// ApexCharts-style implementation
 const ApexChartsDemo = () => {
   const chartRef = useRef<HTMLDivElement>(null);
-  const [currentView, setCurrentView] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [breadcrumb, setBreadcrumb] = useState<string[]>(['Revenue by Product']);
+  const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
+  const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+
+  const getNextLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
+    const hierarchy = ['product', 'month', 'quarter', 'region'];
+    const currentIndex = hierarchy.indexOf(current);
+    return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
+  };
+
+  const getFilteredData = () => {
+    let filteredData = [...sampleData];
+    
+    drilldownPath.forEach(({ level, value }) => {
+      if (level === 'product') {
+        filteredData = filteredData.filter(item => item.product_name === value);
+      } else if (level === 'month') {
+        filteredData = filteredData.filter(item => item.month.toString() === value);
+      } else if (level === 'quarter') {
+        filteredData = filteredData.filter(item => item.quarter.toString() === value);
+      } else if (level === 'region') {
+        filteredData = filteredData.filter(item => item.region === value);
+      }
+    });
+    
+    return aggregateDataByDimension(filteredData, currentLevel);
+  };
 
   const drawChart = (data: Array<{name: string, revenue: number}>) => {
     const container = chartRef.current;
     if (!container) return;
     
-    // Clear previous content
     container.innerHTML = '';
     
-    // Create chart container with ApexCharts styling
     const chartDiv = document.createElement('div');
     chartDiv.style.width = '800px';
     chartDiv.style.height = '400px';
@@ -26,9 +49,9 @@ const ApexChartsDemo = () => {
     chartDiv.style.borderRadius = '12px';
     chartDiv.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
     chartDiv.style.padding = '20px';
+    chartDiv.style.overflow = 'hidden';
     container.appendChild(chartDiv);
     
-    // Create SVG
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('width', '100%');
     svg.setAttribute('height', '100%');
@@ -41,9 +64,12 @@ const ApexChartsDemo = () => {
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
     
-    // ApexCharts-style gradient colors
-    const colors = ['#00E396', '#008FFB', '#FEB019', '#FF4560', '#775DD0', '#FF66C4'];
+    // Create zoom group
+    const zoomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    zoomGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`);
+    svg.appendChild(zoomGroup);
     
+    const colors = ['#00E396', '#008FFB', '#FEB019', '#FF4560', '#775DD0', '#FF66C4'];
     const maxValue = Math.max(...data.map(d => d.revenue));
     const barWidth = chartWidth / data.length * 0.7;
     const barSpacing = chartWidth / data.length * 0.3;
@@ -75,6 +101,8 @@ const ApexChartsDemo = () => {
     svg.appendChild(defs);
     
     // Title
+    const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
+    const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     title.setAttribute('x', (width/2).toString());
     title.setAttribute('y', '35');
@@ -82,10 +110,10 @@ const ApexChartsDemo = () => {
     title.setAttribute('font-size', '20');
     title.setAttribute('font-weight', '600');
     title.setAttribute('fill', '#373d3f');
-    title.textContent = `Revenue by ${currentView.charAt(0).toUpperCase() + currentView.slice(1)}`;
+    title.textContent = `Revenue by ${levelName}${pathString}`;
     svg.appendChild(title);
     
-    // Subtle grid lines
+    // Grid lines
     for (let i = 0; i <= 4; i++) {
       const y = margin.top + (chartHeight / 4) * i;
       const gridLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -96,14 +124,19 @@ const ApexChartsDemo = () => {
       gridLine.setAttribute('stroke', '#f1f5f9');
       gridLine.setAttribute('stroke-width', '1');
       gridLine.setAttribute('stroke-dasharray', '3,3');
-      svg.appendChild(gridLine);
+      zoomGroup.appendChild(gridLine);
     }
     
-    // Bars with gradients and animations
+    // Bars with drilldown
     data.forEach((item, index) => {
       const barHeight = (item.revenue / maxValue) * chartHeight;
       const x = margin.left + index * (barWidth + barSpacing);
       const y = margin.top + chartHeight - barHeight;
+      
+      // Bar group for click handling
+      const barGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      barGroup.style.cursor = 'pointer';
+      barGroup.addEventListener('click', () => handleDrillDown(item.name));
       
       // Bar with gradient
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -114,22 +147,22 @@ const ApexChartsDemo = () => {
       rect.setAttribute('fill', `url(#gradient${index % colors.length})`);
       rect.setAttribute('rx', '4');
       rect.setAttribute('ry', '4');
-      rect.style.cursor = 'pointer';
       rect.style.transition = 'all 0.3s ease';
       
       // Hover effects
       rect.addEventListener('mouseenter', () => {
         rect.style.transform = 'scale(1.05)';
         rect.style.filter = 'brightness(1.1)';
+        rect.style.transformOrigin = `${x + barWidth/2}px ${y + barHeight/2}px`;
       });
       rect.addEventListener('mouseleave', () => {
         rect.style.transform = 'scale(1)';
         rect.style.filter = 'brightness(1)';
       });
       
-      svg.appendChild(rect);
+      barGroup.appendChild(rect);
       
-      // Value label with modern styling
+      // Value label
       const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
       valueText.setAttribute('x', (x + barWidth/2).toString());
       valueText.setAttribute('y', (y - 12).toString());
@@ -137,8 +170,9 @@ const ApexChartsDemo = () => {
       valueText.setAttribute('font-size', '13');
       valueText.setAttribute('font-weight', '600');
       valueText.setAttribute('fill', '#64748b');
+      valueText.setAttribute('pointer-events', 'none');
       valueText.textContent = `$${(item.revenue / 1000).toFixed(1)}k`;
-      svg.appendChild(valueText);
+      barGroup.appendChild(valueText);
       
       // Category label
       const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -149,87 +183,95 @@ const ApexChartsDemo = () => {
       nameText.setAttribute('font-weight', '500');
       nameText.setAttribute('fill', '#64748b');
       nameText.setAttribute('transform', `rotate(-25, ${x + barWidth/2}, ${margin.top + chartHeight + 25})`);
+      nameText.setAttribute('pointer-events', 'none');
       nameText.textContent = item.name;
-      svg.appendChild(nameText);
+      barGroup.appendChild(nameText);
+      
+      zoomGroup.appendChild(barGroup);
     });
   };
 
-  const handleDrillDown = (dimension: 'product' | 'month' | 'quarter' | 'region') => {
-    setCurrentView(dimension);
-    const dimensionName = dimension.charAt(0).toUpperCase() + dimension.slice(1);
-    setBreadcrumb([...breadcrumb, `Revenue by ${dimensionName}`]);
+  const handleDrillDown = (value: string) => {
+    const nextLevel = getNextLevel(currentLevel);
+    if (!nextLevel) return;
+    
+    setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
+    setCurrentLevel(nextLevel);
   };
 
   const handleBreadcrumbClick = (index: number) => {
+    const newPath = drilldownPath.slice(0, index);
+    setDrilldownPath(newPath);
+    
     if (index === 0) {
-      setCurrentView('product');
-      setBreadcrumb(['Revenue by Product']);
+      setCurrentLevel('product');
+    } else {
+      const hierarchy = ['product', 'month', 'quarter', 'region'];
+      const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
+      setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
   };
 
+  const handleZoom = (delta: number) => {
+    setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
+  };
+
   useEffect(() => {
-    const data = aggregateDataByDimension(sampleData, currentView);
+    const data = getFilteredData();
     drawChart(data);
-  }, [currentView]);
+  }, [currentLevel, drilldownPath, zoomLevel, panOffset]);
+
+  const breadcrumbItems = [
+    { level: 'product', value: 'All Products' },
+    ...drilldownPath
+  ];
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2">
-          {breadcrumb.map((item, index) => (
+          {breadcrumbItems.map((item, index) => (
             <React.Fragment key={index}>
               {index > 0 && <span className="text-gray-400">/</span>}
               <button
                 onClick={() => handleBreadcrumbClick(index)}
-                className={`text-sm ${index === breadcrumb.length - 1 ? 'font-semibold text-gray-900' : 'text-blue-600 hover:text-blue-800'}`}
+                className={`text-sm ${index === breadcrumbItems.length - 1 ? 'font-semibold text-gray-900' : 'text-blue-600 hover:text-blue-800'}`}
               >
-                {item}
+                {item.value}
               </button>
             </React.Fragment>
           ))}
         </div>
-        {breadcrumb.length > 1 && (
+        
+        <div className="flex items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => handleBreadcrumbClick(0)}
+            onClick={() => handleZoom(-0.2)}
             className="flex items-center gap-1"
           >
-            <ChevronLeft className="w-4 h-4" />
-            Back to Overview
+            <ZoomOut className="w-4 h-4" />
           </Button>
-        )}
-      </div>
-      
-      <div className="grid grid-cols-4 gap-2 mb-4">
-        <Button
-          variant={currentView === 'product' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('product')}
-        >
-          By Product
-        </Button>
-        <Button
-          variant={currentView === 'month' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('month')}
-        >
-          By Month
-        </Button>
-        <Button
-          variant={currentView === 'quarter' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('quarter')}
-        >
-          By Quarter
-        </Button>
-        <Button
-          variant={currentView === 'region' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => handleDrillDown('region')}
-        >
-          By Region
-        </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleZoom(0.2)}
+            className="flex items-center gap-1"
+          >
+            <ZoomIn className="w-4 h-4" />
+          </Button>
+          {drilldownPath.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => handleBreadcrumbClick(0)}
+              className="flex items-center gap-1"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              Reset
+            </Button>
+          )}
+        </div>
       </div>
       
       <div className="flex justify-center">
@@ -237,8 +279,8 @@ const ApexChartsDemo = () => {
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>ApexCharts-style Implementation:</strong> Modern, responsive charts with beautiful gradients, 
-        smooth animations, and interactive features. Optimized for React applications.
+        <strong>ApexCharts-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
+        Modern design with gradients and zoom controls. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );
