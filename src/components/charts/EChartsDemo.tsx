@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { sampleData, aggregateDataByDimension } from '@/data/sampleData';
 
 const EChartsDemo = () => {
@@ -191,7 +191,9 @@ const EChartsDemo = () => {
     setIsDragging(false);
   };
 
-  const handleZoom = (delta: number) => {
+  const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? -0.1 : 0.1;
     setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
   };
 
@@ -223,22 +225,6 @@ const EChartsDemo = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleZoom(-0.2)}
-            className="flex items-center gap-1"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleZoom(0.2)}
-            className="flex items-center gap-1"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </Button>
           {drilldownPath.length > 0 && (
             <Button
               variant="outline"
@@ -256,19 +242,20 @@ const EChartsDemo = () => {
       <div className="flex justify-center">
         <canvas 
           ref={canvasRef}
-          className="border border-gray-200 rounded-lg shadow-sm cursor-pointer"
+          className="border border-gray-200 rounded-lg shadow-sm cursor-grab active:cursor-grabbing"
           style={{ maxWidth: '100%', height: 'auto' }}
           onClick={handleCanvasClick}
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
         />
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
         <strong>ECharts-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
-        Use zoom controls or drag to pan. Path: Product → Month → Quarter → Region
+        Drag to pan and use mouse wheel to zoom. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { sampleData, aggregateDataByDimension } from '@/data/sampleData';
 
 const D3ChartDemo = () => {
@@ -10,6 +10,8 @@ const D3ChartDemo = () => {
   const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   const getNextLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
     const hierarchy = ['product', 'month', 'quarter', 'region'];
@@ -179,7 +181,32 @@ const D3ChartDemo = () => {
     }
   };
 
-  const handleZoom = (delta: number) => {
+  const handleMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
+    setIsDragging(true);
+    setLastMousePos({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
+    if (!isDragging) return;
+    
+    const deltaX = event.clientX - lastMousePos.x;
+    const deltaY = event.clientY - lastMousePos.y;
+    
+    setPanOffset(prev => ({
+      x: prev.x + deltaX,
+      y: prev.y + deltaY
+    }));
+    
+    setLastMousePos({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? -0.1 : 0.1;
     setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
   };
 
@@ -211,22 +238,6 @@ const D3ChartDemo = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleZoom(-0.2)}
-            className="flex items-center gap-1"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleZoom(0.2)}
-            className="flex items-center gap-1"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </Button>
           {drilldownPath.length > 0 && (
             <Button
               variant="outline"
@@ -244,14 +255,19 @@ const D3ChartDemo = () => {
       <div className="flex justify-center">
         <svg 
           ref={svgRef}
-          className="border border-gray-200 rounded-lg shadow-sm"
+          className="border border-gray-200 rounded-lg shadow-sm cursor-grab active:cursor-grabbing"
           style={{ maxWidth: '100%', height: 'auto' }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
         />
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
         <strong>D3.js-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
-        Use zoom controls for better visualization. Path: Product → Month → Quarter → Region
+        Drag to pan and use mouse wheel to zoom. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );

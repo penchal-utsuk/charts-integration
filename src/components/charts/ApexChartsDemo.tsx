@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { ChevronLeft, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronLeft } from 'lucide-react';
 import { sampleData, aggregateDataByDimension } from '@/data/sampleData';
 
 const ApexChartsDemo = () => {
@@ -10,6 +10,8 @@ const ApexChartsDemo = () => {
   const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
 
   const getNextLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
     const hierarchy = ['product', 'month', 'quarter', 'region'];
@@ -50,6 +52,7 @@ const ApexChartsDemo = () => {
     chartDiv.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
     chartDiv.style.padding = '20px';
     chartDiv.style.overflow = 'hidden';
+    chartDiv.style.cursor = 'grab';
     container.appendChild(chartDiv);
     
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -212,7 +215,34 @@ const ApexChartsDemo = () => {
     }
   };
 
-  const handleZoom = (delta: number) => {
+  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    setIsDragging(true);
+    setLastMousePos({ x: event.clientX, y: event.clientY });
+    event.currentTarget.style.cursor = 'grabbing';
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDragging) return;
+    
+    const deltaX = event.clientX - lastMousePos.x;
+    const deltaY = event.clientY - lastMousePos.y;
+    
+    setPanOffset(prev => ({
+      x: prev.x + deltaX,
+      y: prev.y + deltaY
+    }));
+    
+    setLastMousePos({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
+    setIsDragging(false);
+    event.currentTarget.style.cursor = 'grab';
+  };
+
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? -0.1 : 0.1;
     setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
   };
 
@@ -244,22 +274,6 @@ const ApexChartsDemo = () => {
         </div>
         
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleZoom(-0.2)}
-            className="flex items-center gap-1"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => handleZoom(0.2)}
-            className="flex items-center gap-1"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </Button>
           {drilldownPath.length > 0 && (
             <Button
               variant="outline"
@@ -275,12 +289,19 @@ const ApexChartsDemo = () => {
       </div>
       
       <div className="flex justify-center">
-        <div ref={chartRef} />
+        <div 
+          ref={chartRef}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onWheel={handleWheel}
+        />
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
         <strong>ApexCharts-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
-        Modern design with gradients and zoom controls. Path: Product → Month → Quarter → Region
+        Drag to pan and use mouse wheel to zoom. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );
