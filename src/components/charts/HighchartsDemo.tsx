@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
-import { sampleData, aggregateDataByDimension } from '@/data/sampleData';
+import dataset from '@/data/dataset.json';
+import { aggregateDataByDimension } from '@/data/sampleData';
 
 const HighchartsDemo = () => {
   const chartRef = useRef<HTMLDivElement>(null);
@@ -25,7 +25,7 @@ const HighchartsDemo = () => {
   };
 
   const getFilteredData = () => {
-    let filteredData = [...sampleData];
+    let filteredData = [...dataset];
     
     drilldownPath.forEach(({ level, value }) => {
       if (level === 'product') {
