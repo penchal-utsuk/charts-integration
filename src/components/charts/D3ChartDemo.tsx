@@ -8,7 +8,6 @@ const D3ChartDemo = () => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
   const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
@@ -17,6 +16,12 @@ const D3ChartDemo = () => {
     const hierarchy = ['product', 'month', 'quarter', 'region'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
+  };
+
+  const getPreviousLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
+    const hierarchy = ['product', 'month', 'quarter', 'region'];
+    const currentIndex = hierarchy.indexOf(current);
+    return currentIndex > 0 ? hierarchy[currentIndex - 1] as any : null;
   };
 
   const getFilteredData = () => {
@@ -54,9 +59,9 @@ const D3ChartDemo = () => {
     svg.setAttribute('width', width.toString());
     svg.setAttribute('height', height.toString());
     
-    // Create main group with zoom and pan
+    // Create main group with pan
     const mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    mainGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`);
+    mainGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y})`);
     svg.appendChild(mainGroup);
     
     const maxValue = Math.max(...data.map(d => d.revenue));
@@ -86,9 +91,8 @@ const D3ChartDemo = () => {
       rect.setAttribute('fill', colors[index % colors.length]);
       rect.setAttribute('stroke', '#fff');
       rect.setAttribute('stroke-width', '2');
-      rect.setAttribute('class', 'hover:opacity-80 transition-opacity');
       
-      // Hover effects
+      // D3-style hover effects
       rect.addEventListener('mouseenter', () => {
         rect.setAttribute('opacity', '0.8');
         rect.setAttribute('transform', 'scale(1.02)');
@@ -127,7 +131,7 @@ const D3ChartDemo = () => {
       mainGroup.appendChild(barGroup);
     });
     
-    // Title
+    // Title (outside pan group)
     const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
     const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -166,6 +170,20 @@ const D3ChartDemo = () => {
     
     setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
     setCurrentLevel(nextLevel);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const handleDrillUp = () => {
+    if (drilldownPath.length === 0) return;
+    
+    const newPath = drilldownPath.slice(0, -1);
+    setDrilldownPath(newPath);
+    
+    const prevLevel = getPreviousLevel(currentLevel);
+    if (prevLevel) {
+      setCurrentLevel(prevLevel);
+    }
+    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleBreadcrumbClick = (index: number) => {
@@ -179,6 +197,7 @@ const D3ChartDemo = () => {
       const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
       setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
+    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
@@ -206,14 +225,23 @@ const D3ChartDemo = () => {
 
   const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
     event.preventDefault();
-    const delta = event.deltaY > 0 ? -0.1 : 0.1;
-    setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
+    
+    if (event.deltaY > 0) {
+      // Scroll down - drill down deeper
+      const data = getFilteredData();
+      if (data.length > 0) {
+        handleDrillDown(data[0].name);
+      }
+    } else {
+      // Scroll up - drill up
+      handleDrillUp();
+    }
   };
 
   useEffect(() => {
     const data = getFilteredData();
     drawChart(data);
-  }, [currentLevel, drilldownPath, zoomLevel, panOffset]);
+  }, [currentLevel, drilldownPath, panOffset]);
 
   const breadcrumbItems = [
     { level: 'product', value: 'All Products' },
@@ -266,8 +294,8 @@ const D3ChartDemo = () => {
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>D3.js-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
-        Drag to pan and use mouse wheel to zoom. Path: Product → Month → Quarter → Region
+        <strong>D3.js-style Implementation:</strong> Click on bars or use mouse wheel to drill down/up through data hierarchy. 
+        Drag to pan within current level. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );

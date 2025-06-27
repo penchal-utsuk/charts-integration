@@ -8,7 +8,6 @@ const HighchartsDemo = () => {
   const chartRef = useRef<HTMLDivElement>(null);
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
   const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
@@ -17,6 +16,12 @@ const HighchartsDemo = () => {
     const hierarchy = ['product', 'month', 'quarter', 'region'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
+  };
+
+  const getPreviousLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
+    const hierarchy = ['product', 'month', 'quarter', 'region'];
+    const currentIndex = hierarchy.indexOf(current);
+    return currentIndex > 0 ? hierarchy[currentIndex - 1] as any : null;
   };
 
   const getFilteredData = () => {
@@ -41,49 +46,47 @@ const HighchartsDemo = () => {
     const container = chartRef.current;
     if (!container) return;
     
+    // Clear previous content
     container.innerHTML = '';
     
+    // Create chart container
     const chartDiv = document.createElement('div');
     chartDiv.style.width = '800px';
     chartDiv.style.height = '400px';
     chartDiv.style.position = 'relative';
-    chartDiv.style.backgroundColor = '#ffffff';
-    chartDiv.style.border = '1px solid #e5e7eb';
+    chartDiv.style.backgroundColor = '#fefefe';
+    chartDiv.style.border = '1px solid #e0e0e0';
     chartDiv.style.borderRadius = '8px';
     chartDiv.style.overflow = 'hidden';
     chartDiv.style.cursor = 'grab';
+    chartDiv.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
     container.appendChild(chartDiv);
     
+    // Create SVG
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('width', '100%');
     svg.setAttribute('height', '100%');
-    svg.style.fontFamily = 'Arial, sans-serif';
+    svg.style.fontFamily = '"Lucida Grande", "Lucida Sans Unicode", Verdana, Arial, Helvetica, sans-serif';
+    svg.style.fontSize = '12px';
     chartDiv.appendChild(svg);
     
     const width = 800;
     const height = 400;
-    const margin = { top: 50, right: 40, bottom: 100, left: 80 };
+    const margin = { top: 60, right: 40, bottom: 100, left: 80 };
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
     
-    // Create zoom group
-    const zoomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    zoomGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`);
-    svg.appendChild(zoomGroup);
+    // Create pan group
+    const panGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    panGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y})`);
+    svg.appendChild(panGroup);
     
     const colors = ['#7cb5ec', '#434348', '#90ed7d', '#f7a35c', '#8085e9', '#f15c80'];
     const maxValue = Math.max(...data.map(d => d.revenue));
     const barWidth = chartWidth / data.length * 0.6;
     const barSpacing = chartWidth / data.length * 0.4;
     
-    // Background
-    const background = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-    background.setAttribute('width', '100%');
-    background.setAttribute('height', '100%');
-    background.setAttribute('fill', '#ffffff');
-    svg.appendChild(background);
-    
-    // Title
+    // Title (outside pan group)
     const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
     const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -96,7 +99,7 @@ const HighchartsDemo = () => {
     title.textContent = `Revenue by ${levelName}${pathString}`;
     svg.appendChild(title);
     
-    // Grid lines
+    // Background grid
     for (let i = 0; i <= 5; i++) {
       const y = margin.top + (chartHeight / 5) * i;
       const gridLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -106,7 +109,7 @@ const HighchartsDemo = () => {
       gridLine.setAttribute('y2', y.toString());
       gridLine.setAttribute('stroke', '#e6e6e6');
       gridLine.setAttribute('stroke-width', '1');
-      zoomGroup.appendChild(gridLine);
+      panGroup.appendChild(gridLine);
     }
     
     // Bars with drilldown
@@ -120,7 +123,7 @@ const HighchartsDemo = () => {
       barGroup.style.cursor = 'pointer';
       barGroup.addEventListener('click', () => handleDrillDown(item.name));
       
-      // Bar
+      // Bar with Highcharts styling
       const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
       rect.setAttribute('x', x.toString());
       rect.setAttribute('y', y.toString());
@@ -129,18 +132,17 @@ const HighchartsDemo = () => {
       rect.setAttribute('fill', colors[index % colors.length]);
       rect.setAttribute('stroke', '#ffffff');
       rect.setAttribute('stroke-width', '1');
-      rect.setAttribute('rx', '3');
-      rect.setAttribute('ry', '3');
+      rect.setAttribute('rx', '2');
+      rect.setAttribute('ry', '2');
       
-      // Hover effects
+      // Highcharts-style hover effects
       rect.addEventListener('mouseenter', () => {
-        rect.setAttribute('fill-opacity', '0.8');
-        rect.style.transform = 'scale(1.02)';
-        rect.style.transformOrigin = `${x + barWidth/2}px ${y + barHeight/2}px`;
+        rect.setAttribute('fill-opacity', '0.75');
+        rect.setAttribute('stroke-width', '2');
       });
       rect.addEventListener('mouseleave', () => {
         rect.setAttribute('fill-opacity', '1');
-        rect.style.transform = 'scale(1)';
+        rect.setAttribute('stroke-width', '1');
       });
       
       barGroup.appendChild(rect);
@@ -150,7 +152,7 @@ const HighchartsDemo = () => {
       valueText.setAttribute('x', (x + barWidth/2).toString());
       valueText.setAttribute('y', (y - 8).toString());
       valueText.setAttribute('text-anchor', 'middle');
-      valueText.setAttribute('font-size', '12');
+      valueText.setAttribute('font-size', '11');
       valueText.setAttribute('font-weight', 'bold');
       valueText.setAttribute('fill', '#666666');
       valueText.setAttribute('pointer-events', 'none');
@@ -169,7 +171,7 @@ const HighchartsDemo = () => {
       nameText.textContent = item.name;
       barGroup.appendChild(nameText);
       
-      zoomGroup.appendChild(barGroup);
+      panGroup.appendChild(barGroup);
     });
     
     // Axes
@@ -180,7 +182,7 @@ const HighchartsDemo = () => {
     yAxis.setAttribute('y2', (margin.top + chartHeight).toString());
     yAxis.setAttribute('stroke', '#cccccc');
     yAxis.setAttribute('stroke-width', '2');
-    zoomGroup.appendChild(yAxis);
+    panGroup.appendChild(yAxis);
     
     const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     xAxis.setAttribute('x1', margin.left.toString());
@@ -189,7 +191,7 @@ const HighchartsDemo = () => {
     xAxis.setAttribute('y2', (margin.top + chartHeight).toString());
     xAxis.setAttribute('stroke', '#cccccc');
     xAxis.setAttribute('stroke-width', '2');
-    zoomGroup.appendChild(xAxis);
+    panGroup.appendChild(xAxis);
   };
 
   const handleDrillDown = (value: string) => {
@@ -198,6 +200,20 @@ const HighchartsDemo = () => {
     
     setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
     setCurrentLevel(nextLevel);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const handleDrillUp = () => {
+    if (drilldownPath.length === 0) return;
+    
+    const newPath = drilldownPath.slice(0, -1);
+    setDrilldownPath(newPath);
+    
+    const prevLevel = getPreviousLevel(currentLevel);
+    if (prevLevel) {
+      setCurrentLevel(prevLevel);
+    }
+    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleBreadcrumbClick = (index: number) => {
@@ -211,6 +227,7 @@ const HighchartsDemo = () => {
       const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
       setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
+    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -240,14 +257,23 @@ const HighchartsDemo = () => {
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const delta = event.deltaY > 0 ? -0.1 : 0.1;
-    setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
+    
+    if (event.deltaY > 0) {
+      // Scroll down - drill down deeper
+      const data = getFilteredData();
+      if (data.length > 0) {
+        handleDrillDown(data[0].name);
+      }
+    } else {
+      // Scroll up - drill up
+      handleDrillUp();
+    }
   };
 
   useEffect(() => {
     const data = getFilteredData();
     drawChart(data);
-  }, [currentLevel, drilldownPath, zoomLevel, panOffset]);
+  }, [currentLevel, drilldownPath, panOffset]);
 
   const breadcrumbItems = [
     { level: 'product', value: 'All Products' },
@@ -298,8 +324,8 @@ const HighchartsDemo = () => {
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>Highcharts-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
-        Drag to pan and use mouse wheel to zoom. Path: Product → Month → Quarter → Region
+        <strong>Highcharts-style Implementation:</strong> Click on bars or use mouse wheel to drill down/up through data hierarchy. 
+        Drag to pan within current level. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );

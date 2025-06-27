@@ -8,7 +8,6 @@ const EChartsDemo = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
   const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
@@ -17,6 +16,12 @@ const EChartsDemo = () => {
     const hierarchy = ['product', 'month', 'quarter', 'region'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
+  };
+
+  const getPreviousLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
+    const hierarchy = ['product', 'month', 'quarter', 'region'];
+    const currentIndex = hierarchy.indexOf(current);
+    return currentIndex > 0 ? hierarchy[currentIndex - 1] as any : null;
   };
 
   const getFilteredData = () => {
@@ -49,14 +54,13 @@ const EChartsDemo = () => {
     
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Apply zoom and pan transformations
+    // Apply pan transformations only
     ctx.save();
     ctx.translate(panOffset.x, panOffset.y);
-    ctx.scale(zoomLevel, zoomLevel);
     
     const margin = { top: 40, right: 40, bottom: 80, left: 80 };
-    const chartWidth = (canvas.width - margin.left - margin.right) / zoomLevel;
-    const chartHeight = (canvas.height - margin.top - margin.bottom) / zoomLevel;
+    const chartWidth = canvas.width - margin.left - margin.right;
+    const chartHeight = canvas.height - margin.top - margin.bottom;
     
     const maxValue = Math.max(...data.map(d => d.revenue));
     const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'];
@@ -72,12 +76,12 @@ const EChartsDemo = () => {
       const x = margin.left + index * (barWidth + barSpacing);
       const y = margin.top + chartHeight - barHeight;
       
-      // Store position for click detection
+      // Store position for click detection (adjusted for pan)
       barPositions.push({
-        x: x * zoomLevel + panOffset.x,
-        y: y * zoomLevel + panOffset.y,
-        width: barWidth * zoomLevel,
-        height: barHeight * zoomLevel,
+        x: x + panOffset.x,
+        y: y + panOffset.y,
+        width: barWidth,
+        height: barHeight,
         data: item
       });
       
@@ -105,15 +109,18 @@ const EChartsDemo = () => {
       ctx.restore();
     });
     
-    // Title
+    // Title (not affected by pan)
+    ctx.restore();
     const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
     const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
     ctx.fillStyle = '#333';
     ctx.font = 'bold 16px Arial';
     ctx.textAlign = 'center';
-    ctx.fillText(`Revenue by ${levelName}${pathString}`, (canvas.width/2) / zoomLevel - panOffset.x / zoomLevel, 25);
+    ctx.fillText(`Revenue by ${levelName}${pathString}`, canvas.width/2, 25);
     
-    // Axes
+    // Axes (affected by pan)
+    ctx.save();
+    ctx.translate(panOffset.x, panOffset.y);
     ctx.strokeStyle = '#ccc';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -122,7 +129,6 @@ const EChartsDemo = () => {
     ctx.moveTo(margin.left, margin.top + chartHeight);
     ctx.lineTo(margin.left + chartWidth, margin.top + chartHeight);
     ctx.stroke();
-    
     ctx.restore();
     
     // Store bar positions for click handling
@@ -153,6 +159,20 @@ const EChartsDemo = () => {
     
     setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
     setCurrentLevel(nextLevel);
+    setPanOffset({ x: 0, y: 0 }); // Reset pan when drilling down
+  };
+
+  const handleDrillUp = () => {
+    if (drilldownPath.length === 0) return;
+    
+    const newPath = drilldownPath.slice(0, -1);
+    setDrilldownPath(newPath);
+    
+    const prevLevel = getPreviousLevel(currentLevel);
+    if (prevLevel) {
+      setCurrentLevel(prevLevel);
+    }
+    setPanOffset({ x: 0, y: 0 }); // Reset pan when drilling up
   };
 
   const handleBreadcrumbClick = (index: number) => {
@@ -166,6 +186,7 @@ const EChartsDemo = () => {
       const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
       setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
+    setPanOffset({ x: 0, y: 0 }); // Reset pan when navigating breadcrumbs
   };
 
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -193,14 +214,23 @@ const EChartsDemo = () => {
 
   const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
     event.preventDefault();
-    const delta = event.deltaY > 0 ? -0.1 : 0.1;
-    setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
+    
+    if (event.deltaY > 0) {
+      // Scroll down - drill down deeper
+      const data = getFilteredData();
+      if (data.length > 0) {
+        handleDrillDown(data[0].name); // Drill into first item
+      }
+    } else {
+      // Scroll up - drill up
+      handleDrillUp();
+    }
   };
 
   useEffect(() => {
     const data = getFilteredData();
     drawChart(data);
-  }, [currentLevel, drilldownPath, zoomLevel, panOffset]);
+  }, [currentLevel, drilldownPath, panOffset]);
 
   const breadcrumbItems = [
     { level: 'product', value: 'All Products' },
@@ -254,8 +284,8 @@ const EChartsDemo = () => {
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>ECharts-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
-        Drag to pan and use mouse wheel to zoom. Path: Product → Month → Quarter → Region
+        <strong>ECharts-style Implementation:</strong> Click on bars or use mouse wheel to drill down/up through data hierarchy. 
+        Drag to pan within current level. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );

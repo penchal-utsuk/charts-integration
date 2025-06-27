@@ -8,7 +8,6 @@ const ApexChartsDemo = () => {
   const chartRef = useRef<HTMLDivElement>(null);
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
   const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [zoomLevel, setZoomLevel] = useState(1);
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
@@ -17,6 +16,12 @@ const ApexChartsDemo = () => {
     const hierarchy = ['product', 'month', 'quarter', 'region'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
+  };
+
+  const getPreviousLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
+    const hierarchy = ['product', 'month', 'quarter', 'region'];
+    const currentIndex = hierarchy.indexOf(current);
+    return currentIndex > 0 ? hierarchy[currentIndex - 1] as any : null;
   };
 
   const getFilteredData = () => {
@@ -67,10 +72,10 @@ const ApexChartsDemo = () => {
     const chartWidth = width - margin.left - margin.right;
     const chartHeight = height - margin.top - margin.bottom;
     
-    // Create zoom group
-    const zoomGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    zoomGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y}) scale(${zoomLevel})`);
-    svg.appendChild(zoomGroup);
+    // Create pan group
+    const panGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    panGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y})`);
+    svg.appendChild(panGroup);
     
     const colors = ['#00E396', '#008FFB', '#FEB019', '#FF4560', '#775DD0', '#FF66C4'];
     const maxValue = Math.max(...data.map(d => d.revenue));
@@ -103,7 +108,7 @@ const ApexChartsDemo = () => {
     });
     svg.appendChild(defs);
     
-    // Title
+    // Title (outside pan group)
     const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
     const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
     const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -127,7 +132,7 @@ const ApexChartsDemo = () => {
       gridLine.setAttribute('stroke', '#f1f5f9');
       gridLine.setAttribute('stroke-width', '1');
       gridLine.setAttribute('stroke-dasharray', '3,3');
-      zoomGroup.appendChild(gridLine);
+      panGroup.appendChild(gridLine);
     }
     
     // Bars with drilldown
@@ -152,7 +157,7 @@ const ApexChartsDemo = () => {
       rect.setAttribute('ry', '4');
       rect.style.transition = 'all 0.3s ease';
       
-      // Hover effects
+      // ApexCharts-style hover effects
       rect.addEventListener('mouseenter', () => {
         rect.style.transform = 'scale(1.05)';
         rect.style.filter = 'brightness(1.1)';
@@ -190,7 +195,7 @@ const ApexChartsDemo = () => {
       nameText.textContent = item.name;
       barGroup.appendChild(nameText);
       
-      zoomGroup.appendChild(barGroup);
+      panGroup.appendChild(barGroup);
     });
   };
 
@@ -200,6 +205,20 @@ const ApexChartsDemo = () => {
     
     setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
     setCurrentLevel(nextLevel);
+    setPanOffset({ x: 0, y: 0 });
+  };
+
+  const handleDrillUp = () => {
+    if (drilldownPath.length === 0) return;
+    
+    const newPath = drilldownPath.slice(0, -1);
+    setDrilldownPath(newPath);
+    
+    const prevLevel = getPreviousLevel(currentLevel);
+    if (prevLevel) {
+      setCurrentLevel(prevLevel);
+    }
+    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleBreadcrumbClick = (index: number) => {
@@ -213,6 +232,7 @@ const ApexChartsDemo = () => {
       const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
       setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
+    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
@@ -242,14 +262,23 @@ const ApexChartsDemo = () => {
 
   const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
-    const delta = event.deltaY > 0 ? -0.1 : 0.1;
-    setZoomLevel(prev => Math.max(0.5, Math.min(3, prev + delta)));
+    
+    if (event.deltaY > 0) {
+      // Scroll down - drill down deeper
+      const data = getFilteredData();
+      if (data.length > 0) {
+        handleDrillDown(data[0].name);
+      }
+    } else {
+      // Scroll up - drill up
+      handleDrillUp();
+    }
   };
 
   useEffect(() => {
     const data = getFilteredData();
     drawChart(data);
-  }, [currentLevel, drilldownPath, zoomLevel, panOffset]);
+  }, [currentLevel, drilldownPath, panOffset]);
 
   const breadcrumbItems = [
     { level: 'product', value: 'All Products' },
@@ -300,8 +329,8 @@ const ApexChartsDemo = () => {
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>ApexCharts-style Implementation:</strong> Click on bars to drill down through the data hierarchy. 
-        Drag to pan and use mouse wheel to zoom. Path: Product → Month → Quarter → Region
+        <strong>ApexCharts-style Implementation:</strong> Click on bars or use mouse wheel to drill down/up through data hierarchy. 
+        Drag to pan within current level. Path: Product → Month → Quarter → Region
       </div>
     </div>
   );
