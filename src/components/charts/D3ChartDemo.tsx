@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import * as d3 from 'd3';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
 import dataset from '@/data/dataset.json';
@@ -7,19 +8,16 @@ import { aggregateDataByDimension } from '@/data/sampleData';
 const D3ChartDemo = () => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
-  const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [currentLevel, setCurrentLevel] = useState<'product' | 'region' | 'quarter' | 'month'>('product');
 
-  const getNextLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
-    const hierarchy = ['product', 'month', 'quarter', 'region'];
+  const getNextLevel = (current: string): 'product' | 'region' | 'quarter' | 'month' | null => {
+    const hierarchy = ['product', 'region', 'quarter', 'month'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
   };
 
-  const getPreviousLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
-    const hierarchy = ['product', 'month', 'quarter', 'region'];
+  const getPreviousLevel = (current: string): 'product' | 'region' | 'quarter' | 'month' | null => {
+    const hierarchy = ['product', 'region', 'quarter', 'month'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex > 0 ? hierarchy[currentIndex - 1] as any : null;
   };
@@ -30,147 +28,157 @@ const D3ChartDemo = () => {
     drilldownPath.forEach(({ level, value }) => {
       if (level === 'product') {
         filteredData = filteredData.filter(item => item.product_name === value);
-      } else if (level === 'month') {
-        filteredData = filteredData.filter(item => item.month.toString() === value);
-      } else if (level === 'quarter') {
-        filteredData = filteredData.filter(item => item.quarter.toString() === value);
       } else if (level === 'region') {
         filteredData = filteredData.filter(item => item.region === value);
+      } else if (level === 'quarter') {
+        filteredData = filteredData.filter(item => item.quarter.toString() === value);
+      } else if (level === 'month') {
+        filteredData = filteredData.filter(item => item.month.toString() === value);
       }
     });
     
     return aggregateDataByDimension(filteredData, currentLevel);
   };
 
-  const drawChart = (data: Array<{name: string, revenue: number}>) => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    
-    while (svg.firstChild) {
-      svg.removeChild(svg.firstChild);
-    }
-    
-    const width = 800;
-    const height = 400;
+  const chartData = useMemo(() => {
+    const data = getFilteredData();
+    return data.map(item => ({
+      name: currentLevel === 'month' 
+        ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(item.name) - 1] || item.name
+        : item.name,
+      value: item.revenue,
+      originalName: item.name
+    }));
+  }, [currentLevel, drilldownPath]);
+
+  const drawChart = () => {
+    if (!svgRef.current || chartData.length === 0) return;
+
+    // Clear previous chart
+    d3.select(svgRef.current).selectAll("*").remove();
+
+    // Set up dimensions
     const margin = { top: 40, right: 40, bottom: 80, left: 80 };
-    const chartWidth = width - margin.left - margin.right;
-    const chartHeight = height - margin.top - margin.bottom;
-    
-    svg.setAttribute('width', width.toString());
-    svg.setAttribute('height', height.toString());
-    
-    // Create main group with pan
-    const mainGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    mainGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y})`);
-    svg.appendChild(mainGroup);
-    
-    const maxValue = Math.max(...data.map(d => d.revenue));
-    const xScale = (index: number) => margin.left + (index * chartWidth) / data.length;
-    const yScale = (value: number) => margin.top + chartHeight - (value / maxValue) * chartHeight;
-    const barWidth = chartWidth / data.length * 0.8;
-    
-    const colors = ['#ff7300', '#ff8c42', '#ffa85c', '#ffbc7a', '#ffd09b', '#ffe4be'];
-    
-    // Draw bars
-    data.forEach((item, index) => {
-      const barHeight = (item.revenue / maxValue) * chartHeight;
-      const x = xScale(index);
-      const y = yScale(item.revenue);
-      
-      // Bar group for click handling
-      const barGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      barGroup.style.cursor = 'pointer';
-      barGroup.addEventListener('click', () => handleDrillDown(item.name));
-      
-      // Bar rectangle
-      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x', x.toString());
-      rect.setAttribute('y', y.toString());
-      rect.setAttribute('width', barWidth.toString());
-      rect.setAttribute('height', barHeight.toString());
-      rect.setAttribute('fill', colors[index % colors.length]);
-      rect.setAttribute('stroke', '#fff');
-      rect.setAttribute('stroke-width', '2');
-      
-      // D3-style hover effects
-      rect.addEventListener('mouseenter', () => {
-        rect.setAttribute('opacity', '0.8');
-        rect.setAttribute('transform', 'scale(1.02)');
-        rect.setAttribute('transform-origin', `${x + barWidth/2} ${y + barHeight/2}`);
-      });
-      rect.addEventListener('mouseleave', () => {
-        rect.setAttribute('opacity', '1');
-        rect.setAttribute('transform', 'scale(1)');
-      });
-      
-      barGroup.appendChild(rect);
-      
-      // Value label
-      const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      valueText.setAttribute('x', (x + barWidth/2).toString());
-      valueText.setAttribute('y', (y - 5).toString());
-      valueText.setAttribute('text-anchor', 'middle');
-      valueText.setAttribute('font-size', '12');
-      valueText.setAttribute('fill', '#333');
-      valueText.setAttribute('pointer-events', 'none');
-      valueText.textContent = `$${item.revenue.toLocaleString()}`;
-      barGroup.appendChild(valueText);
-      
-      // Name label
-      const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      nameText.setAttribute('x', (x + barWidth/2).toString());
-      nameText.setAttribute('y', (margin.top + chartHeight + 20).toString());
-      nameText.setAttribute('text-anchor', 'middle');
-      nameText.setAttribute('font-size', '11');
-      nameText.setAttribute('fill', '#666');
-      nameText.setAttribute('transform', `rotate(-45, ${x + barWidth/2}, ${margin.top + chartHeight + 20})`);
-      nameText.setAttribute('pointer-events', 'none');
-      nameText.textContent = item.name;
-      barGroup.appendChild(nameText);
-      
-      mainGroup.appendChild(barGroup);
-    });
-    
-    // Title (outside pan group)
+    const width = 800 - margin.left - margin.right;
+    const height = 400 - margin.top - margin.bottom;
+
+    // Create SVG
+    const svg = d3.select(svgRef.current)
+      .attr('width', width + margin.left + margin.right)
+      .attr('height', height + margin.top + margin.bottom);
+
+    const g = svg.append('g')
+      .attr('transform', `translate(${margin.left},${margin.top})`);
+
+    // Scales
+    const x = d3.scaleBand()
+      .range([0, width])
+      .domain(chartData.map(d => d.name))
+      .padding(0.2);
+
+    const y = d3.scaleLinear()
+      .domain([0, d3.max(chartData, d => d.value) || 0])
+      .range([height, 0]);
+
+    // Color scale
+    const colors = ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'];
+
+    // Add title
     const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
     const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
-    const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    title.setAttribute('x', (width/2).toString());
-    title.setAttribute('y', '25');
-    title.setAttribute('text-anchor', 'middle');
-    title.setAttribute('font-size', '16');
-    title.setAttribute('font-weight', 'bold');
-    title.setAttribute('fill', '#333');
-    title.textContent = `Revenue by ${levelName}${pathString}`;
-    svg.appendChild(title);
     
-    // Axes
-    const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    yAxis.setAttribute('x1', margin.left.toString());
-    yAxis.setAttribute('y1', margin.top.toString());
-    yAxis.setAttribute('x2', margin.left.toString());
-    yAxis.setAttribute('y2', (margin.top + chartHeight).toString());
-    yAxis.setAttribute('stroke', '#ccc');
-    yAxis.setAttribute('stroke-width', '1');
-    mainGroup.appendChild(yAxis);
-    
-    const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    xAxis.setAttribute('x1', margin.left.toString());
-    xAxis.setAttribute('y1', (margin.top + chartHeight).toString());
-    xAxis.setAttribute('x2', (margin.left + chartWidth).toString());
-    xAxis.setAttribute('y2', (margin.top + chartHeight).toString());
-    xAxis.setAttribute('stroke', '#ccc');
-    xAxis.setAttribute('stroke-width', '1');
-    mainGroup.appendChild(xAxis);
+    svg.append('text')
+      .attr('x', (width + margin.left + margin.right) / 2)
+      .attr('y', 25)
+      .attr('text-anchor', 'middle')
+      .style('font-size', '16px')
+      .style('font-weight', 'bold')
+      .text(`Revenue by ${levelName}${pathString}`);
+
+    // X axis
+    g.append('g')
+      .attr('transform', `translate(0,${height})`)
+      .call(d3.axisBottom(x))
+      .selectAll('text')
+      .style('text-anchor', 'end')
+      .attr('dx', '-.8em')
+      .attr('dy', '.15em')
+      .attr('transform', 'rotate(-45)');
+
+    // Y axis
+    g.append('g')
+      .call(d3.axisLeft(y).tickFormat((d: any) => `$${(d / 1000).toFixed(0)}K`));
+
+    // Y axis label
+    g.append('text')
+      .attr('transform', 'rotate(-90)')
+      .attr('y', 0 - margin.left)
+      .attr('x', 0 - (height / 2))
+      .attr('dy', '1em')
+      .style('text-anchor', 'middle')
+      .text('Revenue ($)');
+
+    // Bars
+    const bars = g.selectAll('.bar')
+      .data(chartData)
+      .enter().append('rect')
+      .attr('class', 'bar')
+      .attr('x', d => x(d.name) || 0)
+      .attr('width', x.bandwidth())
+      .attr('y', d => y(d.value))
+      .attr('height', d => height - y(d.value))
+      .attr('fill', (_, i) => colors[i % colors.length])
+      .style('cursor', 'pointer')
+      .on('mouseover', function(event, d) {
+        d3.select(this)
+          .attr('opacity', 0.8)
+          .attr('stroke', '#333')
+          .attr('stroke-width', 2);
+        
+        // Tooltip
+        const tooltip = d3.select('body').append('div')
+          .attr('class', 'tooltip')
+          .style('position', 'absolute')
+          .style('background', 'rgba(0,0,0,0.8)')
+          .style('color', 'white')
+          .style('padding', '8px')
+          .style('border-radius', '4px')
+          .style('pointer-events', 'none')
+          .style('font-size', '12px');
+        
+        tooltip.html(`${d.name}<br/>Revenue: $${d.value.toLocaleString()}`)
+          .style('left', (event.pageX + 10) + 'px')
+          .style('top', (event.pageY - 10) + 'px');
+      })
+      .on('mouseout', function() {
+        d3.select(this)
+          .attr('opacity', 1)
+          .attr('stroke', 'none');
+        d3.selectAll('.tooltip').remove();
+      })
+      .on('click', function(event, d) {
+        handleDrillDown(d);
+      });
+
+    // Value labels on bars
+    g.selectAll('.bar-label')
+      .data(chartData)
+      .enter().append('text')
+      .attr('class', 'bar-label')
+      .attr('x', d => (x(d.name) || 0) + x.bandwidth() / 2)
+      .attr('y', d => y(d.value) - 5)
+      .attr('text-anchor', 'middle')
+      .style('font-size', '10px')
+      .style('font-weight', 'bold')
+      .text(d => `$${(d.value / 1000).toFixed(0)}K`);
   };
 
-  const handleDrillDown = (value: string) => {
+  const handleDrillDown = (data: any) => {
     const nextLevel = getNextLevel(currentLevel);
     if (!nextLevel) return;
     
-    setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
+    setDrilldownPath([...drilldownPath, { level: currentLevel, value: data.originalName }]);
     setCurrentLevel(nextLevel);
-    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleDrillUp = () => {
@@ -183,7 +191,6 @@ const D3ChartDemo = () => {
     if (prevLevel) {
       setCurrentLevel(prevLevel);
     }
-    setPanOffset({ x: 0, y: 0 });
   };
 
   const handleBreadcrumbClick = (index: number) => {
@@ -193,44 +200,23 @@ const D3ChartDemo = () => {
     if (index === 0) {
       setCurrentLevel('product');
     } else {
-      const hierarchy = ['product', 'month', 'quarter', 'region'];
+      const hierarchy = ['product', 'region', 'quarter', 'month'];
       const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
       setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
-    setPanOffset({ x: 0, y: 0 });
   };
 
-  const handleMouseDown = (event: React.MouseEvent<SVGSVGElement>) => {
-    setIsDragging(true);
-    setLastMousePos({ x: event.clientX, y: event.clientY });
-  };
-
-  const handleMouseMove = (event: React.MouseEvent<SVGSVGElement>) => {
-    if (!isDragging) return;
-    
-    const deltaX = event.clientX - lastMousePos.x;
-    const deltaY = event.clientY - lastMousePos.y;
-    
-    setPanOffset(prev => ({
-      x: prev.x + deltaX,
-      y: prev.y + deltaY
-    }));
-    
-    setLastMousePos({ x: event.clientX, y: event.clientY });
-  };
-
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
-  const handleWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
     event.preventDefault();
     
     if (event.deltaY > 0) {
       // Scroll down - drill down deeper
-      const data = getFilteredData();
-      if (data.length > 0) {
-        handleDrillDown(data[0].name);
+      if (chartData.length > 0) {
+        const nextLevel = getNextLevel(currentLevel);
+        if (nextLevel) {
+          setDrilldownPath([...drilldownPath, { level: currentLevel, value: chartData[0].originalName }]);
+          setCurrentLevel(nextLevel);
+        }
       }
     } else {
       // Scroll up - drill up
@@ -239,9 +225,8 @@ const D3ChartDemo = () => {
   };
 
   useEffect(() => {
-    const data = getFilteredData();
-    drawChart(data);
-  }, [currentLevel, drilldownPath, panOffset]);
+    drawChart();
+  }, [chartData]);
 
   const breadcrumbItems = [
     { level: 'product', value: 'All Products' },
@@ -280,22 +265,17 @@ const D3ChartDemo = () => {
         </div>
       </div>
       
-      <div className="flex justify-center">
+      <div className="flex justify-center" onWheel={handleWheel}>
         <svg 
           ref={svgRef}
-          className="border border-gray-200 rounded-lg shadow-sm cursor-grab active:cursor-grabbing"
-          style={{ maxWidth: '100%', height: 'auto' }}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
+          className="border border-gray-200 rounded-lg shadow-sm"
+          style={{ cursor: 'ns-resize' }}
         />
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>D3.js-style Implementation:</strong> Click on bars or use mouse wheel to drill down/up through data hierarchy. 
-        Drag to pan within current level. Path: Product → Month → Quarter → Region
+        <strong>D3.js Implementation:</strong> Click on bars or scroll up/down to drill down through data hierarchy. 
+        Use breadcrumbs to navigate back. Path: Product → Region → Quarter → Month
       </div>
     </div>
   );
