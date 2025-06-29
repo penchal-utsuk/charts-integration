@@ -30,9 +30,19 @@ const EChartsDemo = () => {
       } else if (level === 'region') {
         filteredData = filteredData.filter(item => item.region === value);
       } else if (level === 'quarter') {
-        filteredData = filteredData.filter(item => item.quarter.toString() === value);
-      }  else if (level === 'month') {
-        filteredData = filteredData.filter(item => item.month.toString() === value);
+        // Handle quarter filtering with "Q1", "Q2", etc. format
+        const quarterNumber = value.replace('Q', '');
+        filteredData = filteredData.filter(item => item.quarter.toString() === quarterNumber);
+      } else if (level === 'month') {
+        // Handle month filtering with month names
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        const monthIndex = monthNames.indexOf(value);
+        if (monthIndex !== -1) {
+          filteredData = filteredData.filter(item => item.month === monthIndex + 1);
+        }
       }
     });
     
@@ -41,14 +51,39 @@ const EChartsDemo = () => {
 
   const chartData = useMemo(() => {
     const data = getFilteredData();
-    return data.map(item => ({
-      name:
-      currentLevel === 'month'
-        ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(item.name) - 1]
-       :item.name,
+    const result = data.map(item => ({
+      name: (() => {
+        if (currentLevel === 'month') {
+          // Handle "Month X" format from aggregateDataByDimension
+          if (item.name.startsWith('Month ')) {
+            const monthNumber = Number(item.name.replace('Month ', ''));
+            if (!isNaN(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+              const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+              return shortMonthNames[monthNumber - 1];
+            }
+          }
+          // Handle full month names (fallback)
+          const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+          ];
+          const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const monthIndex = monthNames.indexOf(item.name);
+          if (monthIndex !== -1) {
+            return shortMonthNames[monthIndex];
+          }
+          // Fallback: try to convert number to month name
+          const monthNumber = Number(item.name);
+          if (!isNaN(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+            return shortMonthNames[monthNumber - 1];
+          }
+        }
+        return item.name;
+      })(),
       value: item.revenue,
       originalName: item.name
     }));
+    return result;
   }, [currentLevel, drilldownPath]);
 
   const chartOption = useMemo(() => {
