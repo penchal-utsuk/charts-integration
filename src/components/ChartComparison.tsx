@@ -1,11 +1,7 @@
-
 import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import EChartsDemo from './charts/EChartsDemo';
 import D3ChartDemo from './charts/D3ChartDemo';
-import HighchartsDemo from './charts/HighchartsDemo';
-import ApexChartsDemo from './charts/ApexChartsDemo';
+import EChartsDemo from './charts/EChartsDemo';
 
 const ChartComparison = () => {
   return (
@@ -19,82 +15,49 @@ const ChartComparison = () => {
             Revenue Analysis with Drilldown Capabilities
           </p>
           <p className="text-sm text-gray-500 mt-2">
-            ECharts vs D3.js vs Highcharts vs ApexCharts
+            D3.js vs ECharts - Side by Side Comparison
           </p>
         </div>
 
-        <Tabs defaultValue="echarts" className="w-full">
-          <TabsList className="grid w-full grid-cols-4 mb-8">
-            <TabsTrigger value="echarts" className="text-sm font-medium">
-              ECharts
-            </TabsTrigger>
-            <TabsTrigger value="d3" className="text-sm font-medium">
-              D3.js
-            </TabsTrigger>
-            <TabsTrigger value="highcharts" className="text-sm font-medium">
-              Highcharts
-            </TabsTrigger>
-            <TabsTrigger value="apexcharts" className="text-sm font-medium">
-              ApexCharts
-            </TabsTrigger>
-          </TabsList>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* D3.js Chart - Left Side */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-orange-500 rounded"></div>
+                D3.js Implementation
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <D3ChartDemo />
+            </CardContent>
+          </Card>
 
-          <TabsContent value="echarts">
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-red-500 rounded"></div>
-                  ECharts Implementation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <EChartsDemo />
-              </CardContent>
-            </Card>
-          </TabsContent>
+          {/* ECharts - Right Side */}
+          <Card className="shadow-lg">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <div className="w-4 h-4 bg-red-500 rounded"></div>
+                ECharts Implementation
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <EChartsDemo />
+            </CardContent>
+          </Card>
+        </div>
 
-          <TabsContent value="d3">
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-orange-500 rounded"></div>
-                  D3.js Implementation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <D3ChartDemo />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="highcharts">
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-blue-500 rounded"></div>
-                  Highcharts Implementation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <HighchartsDemo />
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="apexcharts">
-            <Card className="shadow-lg">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <div className="w-4 h-4 bg-green-500 rounded"></div>
-                  ApexCharts Implementation
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ApexChartsDemo />
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+        <div className="mt-8 text-center text-sm text-gray-600">
+          <p>
+            <strong>Comparison Features:</strong> Both charts support drill-down navigation through Product → Region → Quarter → Month hierarchy.
+          </p>
+          <p className="mt-2">
+            <strong>D3.js:</strong> Custom SVG rendering with interactive tooltips and hover effects.
+          </p>
+          <p className="mt-1">
+            <strong>ECharts:</strong> Built-in chart library with professional styling and animations.
+          </p>
+        </div>
       </div>
     </div>
   );

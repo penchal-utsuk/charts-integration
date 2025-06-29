@@ -31,9 +31,18 @@ const D3ChartDemo = () => {
       } else if (level === 'region') {
         filteredData = filteredData.filter(item => item.region === value);
       } else if (level === 'quarter') {
-        filteredData = filteredData.filter(item => item.quarter.toString() === value);
+        // Handle quarter filtering with "Q1", "Q2", etc. format
+        const quarterNumber = value.replace('Q', '');
+        filteredData = filteredData.filter(item => item.quarter.toString() === quarterNumber);
       } else if (level === 'month') {
-        filteredData = filteredData.filter(item => item.month.toString() === value);
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        const monthIndex = monthNames.indexOf(value);
+        if (monthIndex !== -1) {
+          filteredData = filteredData.filter(item => item.month === monthIndex + 1);
+        }
       }
     });
     
@@ -43,9 +52,34 @@ const D3ChartDemo = () => {
   const chartData = useMemo(() => {
     const data = getFilteredData();
     return data.map(item => ({
-      name: currentLevel === 'month' 
-        ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][Number(item.name) - 1] || item.name
-        : item.name,
+      name: (() => {
+        if (currentLevel === 'month') {
+          // Handle "Month X" format from aggregateDataByDimension
+          if (item.name.startsWith('Month ')) {
+            const monthNumber = Number(item.name.replace('Month ', ''));
+            if (!isNaN(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+              const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+              return shortMonthNames[monthNumber - 1];
+            }
+          }
+          // Handle full month names (fallback)
+          const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+          ];
+          const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const monthIndex = monthNames.indexOf(item.name);
+          if (monthIndex !== -1) {
+            return shortMonthNames[monthIndex];
+          }
+          // Fallback: try to convert number to month name
+          const monthNumber = Number(item.name);
+          if (!isNaN(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+            return shortMonthNames[monthNumber - 1];
+          }
+        }
+        return item.name;
+      })(),
       value: item.revenue,
       originalName: item.name
     }));
@@ -57,15 +91,22 @@ const D3ChartDemo = () => {
     // Clear previous chart
     d3.select(svgRef.current).selectAll("*").remove();
 
+    // Get container dimensions
+    const container = svgRef.current.parentElement;
+    const containerWidth = container ? container.clientWidth : 800;
+    const maxWidth = Math.min(containerWidth - 40, 800); // Account for padding and max width
+    
     // Set up dimensions
     const margin = { top: 40, right: 40, bottom: 80, left: 80 };
-    const width = 800 - margin.left - margin.right;
+    const width = maxWidth - margin.left - margin.right;
     const height = 400 - margin.top - margin.bottom;
 
     // Create SVG
     const svg = d3.select(svgRef.current)
-      .attr('width', width + margin.left + margin.right)
-      .attr('height', height + margin.top + margin.bottom);
+      .attr('width', maxWidth)
+      .attr('height', 400)
+      .style('max-width', '100%')
+      .style('height', 'auto');
 
     const g = svg.append('g')
       .attr('transform', `translate(${margin.left},${margin.top})`);
@@ -88,7 +129,8 @@ const D3ChartDemo = () => {
     const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
     
     svg.append('text')
-      .attr('x', (width + margin.left + margin.right) / 2)
+      .attr('class', 'chart-title')
+      .attr('x', maxWidth / 2)
       .attr('y', 25)
       .attr('text-anchor', 'middle')
       .style('font-size', '16px')
@@ -97,20 +139,24 @@ const D3ChartDemo = () => {
 
     // X axis
     g.append('g')
+      .attr('class', 'x-axis')
       .attr('transform', `translate(0,${height})`)
       .call(d3.axisBottom(x))
       .selectAll('text')
       .style('text-anchor', 'end')
       .attr('dx', '-.8em')
       .attr('dy', '.15em')
-      .attr('transform', 'rotate(-45)');
+      .attr('transform', 'rotate(-45)')
+      .style('font-size', '10px');
 
     // Y axis
     g.append('g')
+      .attr('class', 'y-axis')
       .call(d3.axisLeft(y).tickFormat((d: any) => `$${(d / 1000).toFixed(0)}K`));
 
     // Y axis label
     g.append('text')
+      .attr('class', 'y-axis-label')
       .attr('transform', 'rotate(-90)')
       .attr('y', 0 - margin.left)
       .attr('x', 0 - (height / 2))
@@ -130,6 +176,9 @@ const D3ChartDemo = () => {
       .attr('fill', (_, i) => colors[i % colors.length])
       .style('cursor', 'pointer')
       .on('mouseover', function(event, d) {
+        // Clear any existing tooltips first
+        d3.selectAll('.tooltip').remove();
+        
         d3.select(this)
           .attr('opacity', 0.8)
           .attr('stroke', '#333')
@@ -144,7 +193,8 @@ const D3ChartDemo = () => {
           .style('padding', '8px')
           .style('border-radius', '4px')
           .style('pointer-events', 'none')
-          .style('font-size', '12px');
+          .style('font-size', '12px')
+          .style('z-index', '1000');
         
         tooltip.html(`${d.name}<br/>Revenue: $${d.value.toLocaleString()}`)
           .style('left', (event.pageX + 10) + 'px')
@@ -157,6 +207,8 @@ const D3ChartDemo = () => {
         d3.selectAll('.tooltip').remove();
       })
       .on('click', function(event, d) {
+        // Clear tooltip immediately on click
+        d3.selectAll('.tooltip').remove();
         handleDrillDown(d);
       });
 
@@ -174,6 +226,9 @@ const D3ChartDemo = () => {
   };
 
   const handleDrillDown = (data: any) => {
+    // Clear any existing tooltips first
+    d3.selectAll('.tooltip').remove();
+    
     const nextLevel = getNextLevel(currentLevel);
     if (!nextLevel) return;
     
@@ -226,6 +281,17 @@ const D3ChartDemo = () => {
 
   useEffect(() => {
     drawChart();
+    
+    // Add resize listener
+    const handleResize = () => {
+      drawChart();
+    };
+    
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
   }, [chartData]);
 
   const breadcrumbItems = [
@@ -265,11 +331,11 @@ const D3ChartDemo = () => {
         </div>
       </div>
       
-      <div className="flex justify-center" onWheel={handleWheel}>
+      <div className="flex justify-center w-full overflow-hidden" onWheel={handleWheel}>
         <svg 
           ref={svgRef}
           className="border border-gray-200 rounded-lg shadow-sm"
-          style={{ cursor: 'ns-resize' }}
+          style={{ cursor: 'ns-resize', maxWidth: '100%' }}
         />
       </div>
       
