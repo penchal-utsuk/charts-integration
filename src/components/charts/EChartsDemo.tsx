@@ -254,33 +254,14 @@ const EChartsDemo = () => {
           onEvents={{
             click: handleChartClick
           }}
-          onChartReady={(chart) => {
-            // Add wheel event listener to the chart DOM element
-            const chartDom = chart.getDom();
-            chartDom.addEventListener('wheel', (event) => {
-              event.preventDefault();
-              if (event.deltaY > 0) {
-                // Scroll down - drill down deeper
-                const data = getFilteredData();
-                if (data.length > 0) {
-                  const nextLevel = getNextLevel(currentLevel);
-                  if (nextLevel) {
-                    setDrilldownPath([...drilldownPath, { level: currentLevel, value: data[0].name }]);
-                    setCurrentLevel(nextLevel);
-                  }
-                }
-              } else {
-                // Scroll up - drill up
-                handleDrillUp();
-              }
-            });
+          onChartReady={() => {
             end();
           }}
         />
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>ECharts Implementation:</strong> Click on bars or scroll up/down to drill down through data hierarchy. 
+        <strong>ECharts Implementation:</strong> Click on bars to drill down through data hierarchy. 
         Use breadcrumbs to navigate back. Path: Product → Region → Quarter → Month
       </div>
     </div>
