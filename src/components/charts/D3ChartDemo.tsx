@@ -2,13 +2,19 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as d3 from 'd3';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
-import dataset from '@/data/dataset.json';
+import dataset from '@/data/output.json';
 import { aggregateDataByDimension } from '@/data/sampleData';
+import { useChartPerformance } from '@/lib/useChartPerformance';
 
 const D3ChartDemo = () => {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
   const [currentLevel, setCurrentLevel] = useState<'product' | 'region' | 'quarter' | 'month'>('product');
+  const {start, end} = useChartPerformance('D3', 10)
+
+  useEffect(() => {
+    start()
+  }, [start]);
 
   const getNextLevel = (current: string): 'product' | 'region' | 'quarter' | 'month' | null => {
     const hierarchy = ['product', 'region', 'quarter', 'month'];
@@ -23,7 +29,7 @@ const D3ChartDemo = () => {
   };
 
   const getFilteredData = () => {
-    let filteredData = [...dataset];
+    let filteredData = Array.isArray(dataset) ? [...dataset] : [];
     
     drilldownPath.forEach(({ level, value }) => {
       if (level === 'product') {
@@ -211,7 +217,7 @@ const D3ChartDemo = () => {
         d3.selectAll('.tooltip').remove();
         handleDrillDown(d);
       });
-
+      end();
     // Value labels on bars
     g.selectAll('.bar-label')
       .data(chartData)
