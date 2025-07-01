@@ -2,12 +2,18 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
-import dataset from '@/data/dataset.json';
+import dataset from '@/data/output.json';
 import { aggregateDataByDimension } from '@/data/sampleData';
+import { useChartPerformance } from '@/lib/useChartPerformance';
 
 const EChartsDemo = () => {
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
   const [currentLevel, setCurrentLevel] = useState<'product' | 'region' | 'quarter' | 'month' >('product');
+  const { start, end } = useChartPerformance('ECharts', 10);
+
+  useEffect(() => {
+    start();
+  }, [start]);
 
   const getNextLevel = (current: string): 'product' | 'region' | 'quarter' | 'month' | null => {
     const hierarchy = ['product', 'region', 'quarter', 'month'];
@@ -22,7 +28,7 @@ const EChartsDemo = () => {
   };
 
   const getFilteredData = () => {
-    let filteredData = [...dataset];
+    let filteredData = Array.isArray(dataset) ? [...dataset] : [];
     
     drilldownPath.forEach(({ level, value }) => {
       if (level === 'product') {
@@ -248,11 +254,14 @@ const EChartsDemo = () => {
           onEvents={{
             click: handleChartClick
           }}
+          onChartReady={() => {
+            end();
+          }}
         />
       </div>
       
       <div className="text-sm text-gray-600 mt-4">
-        <strong>ECharts Implementation:</strong> Click on bars to drill down. Use mouse wheel or slider to zoom in/out.
+        <strong>ECharts Implementation:</strong> Click on bars to drill down through data hierarchy. 
         Use breadcrumbs to navigate back. Path: Product → Region → Quarter → Month
       </div>
     </div>

@@ -1,284 +1,179 @@
-import React, { useState, useEffect, useRef } from 'react';
+"use client";
+import React, { useState, useMemo, useEffect } from 'react';
+import ReactApexChart from 'react-apexcharts';
+import { ApexOptions } from 'apexcharts';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
-import dataset from '@/data/dataset.json';
+import dataset from '@/data/output.json';
 import { aggregateDataByDimension } from '@/data/sampleData';
+import { useChartPerformance } from '@/lib/useChartPerformance';
 
 const ApexChartsDemo = () => {
-  const chartRef = useRef<HTMLDivElement>(null);
   const [drilldownPath, setDrilldownPath] = useState<Array<{level: string, value: string}>>([]);
-  const [currentLevel, setCurrentLevel] = useState<'product' | 'month' | 'quarter' | 'region'>('product');
-  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState(false);
-  const [lastMousePos, setLastMousePos] = useState({ x: 0, y: 0 });
+  const [currentLevel, setCurrentLevel] = useState<'product' | 'region' | 'quarter' | 'month'>('product');
+  const [perfStats, setPerfStats] = useState<{last?: number, avg?: number, min?: number, max?: number} | null>(null);
+  const { start, end } = useChartPerformance('ApexCharts', 10);
 
-  const getNextLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
-    const hierarchy = ['product', 'month', 'quarter', 'region'];
+  useEffect(() => {
+    start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    start();
+  }, [drilldownPath, currentLevel, start]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      end();
+    }, 0);
+    return () => clearTimeout(timeout);
+  }, [drilldownPath, currentLevel, end]);
+
+  const getNextLevel = (current: string): 'product' | 'region' | 'quarter' | 'month' | null => {
+    const hierarchy = ['product', 'region', 'quarter', 'month'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex < hierarchy.length - 1 ? hierarchy[currentIndex + 1] as any : null;
   };
 
-  const getPreviousLevel = (current: string): 'product' | 'month' | 'quarter' | 'region' | null => {
-    const hierarchy = ['product', 'month', 'quarter', 'region'];
+  const getPreviousLevel = (current: string): 'product' | 'region' | 'quarter' | 'month' | null => {
+    const hierarchy = ['product', 'region', 'quarter', 'month'];
     const currentIndex = hierarchy.indexOf(current);
     return currentIndex > 0 ? hierarchy[currentIndex - 1] as any : null;
   };
 
   const getFilteredData = () => {
-    let filteredData = [...dataset];
-    
+    let filteredData = Array.isArray(dataset) ? [...dataset] : [];
     drilldownPath.forEach(({ level, value }) => {
       if (level === 'product') {
         filteredData = filteredData.filter(item => item.product_name === value);
-      } else if (level === 'month') {
-        filteredData = filteredData.filter(item => item.month.toString() === value);
-      } else if (level === 'quarter') {
-        filteredData = filteredData.filter(item => item.quarter.toString() === value);
       } else if (level === 'region') {
         filteredData = filteredData.filter(item => item.region === value);
+      } else if (level === 'quarter') {
+        const quarterNumber = value.replace('Q', '');
+        filteredData = filteredData.filter(item => item.quarter.toString() === quarterNumber);
+      } else if (level === 'month') {
+        const monthNames = [
+          'January', 'February', 'March', 'April', 'May', 'June',
+          'July', 'August', 'September', 'October', 'November', 'December'
+        ];
+        const monthIndex = monthNames.indexOf(value);
+        if (monthIndex !== -1) {
+          filteredData = filteredData.filter(item => item.month === monthIndex + 1);
+        }
       }
     });
-    
     return aggregateDataByDimension(filteredData, currentLevel);
   };
 
-  const drawChart = (data: Array<{name: string, revenue: number}>) => {
-    const container = chartRef.current;
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    const chartDiv = document.createElement('div');
-    chartDiv.style.width = '800px';
-    chartDiv.style.height = '400px';
-    chartDiv.style.position = 'relative';
-    chartDiv.style.backgroundColor = '#ffffff';
-    chartDiv.style.borderRadius = '12px';
-    chartDiv.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
-    chartDiv.style.padding = '20px';
-    chartDiv.style.overflow = 'hidden';
-    chartDiv.style.cursor = 'grab';
-    container.appendChild(chartDiv);
-    
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', '100%');
-    svg.setAttribute('height', '100%');
-    svg.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    chartDiv.appendChild(svg);
-    
-    const width = 760;
-    const height = 360;
-    const margin = { top: 60, right: 40, bottom: 80, left: 80 };
-    const chartWidth = width - margin.left - margin.right;
-    const chartHeight = height - margin.top - margin.bottom;
-    
-    // Create pan group
-    const panGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    panGroup.setAttribute('transform', `translate(${panOffset.x}, ${panOffset.y})`);
-    svg.appendChild(panGroup);
-    
-    const colors = ['#00E396', '#008FFB', '#FEB019', '#FF4560', '#775DD0', '#FF66C4'];
-    const maxValue = Math.max(...data.map(d => d.revenue));
-    const barWidth = chartWidth / data.length * 0.7;
-    const barSpacing = chartWidth / data.length * 0.3;
-    
-    // Create gradients
-    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-    colors.forEach((color, index) => {
-      const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-      gradient.setAttribute('id', `gradient${index}`);
-      gradient.setAttribute('x1', '0%');
-      gradient.setAttribute('y1', '0%');
-      gradient.setAttribute('x2', '0%');
-      gradient.setAttribute('y2', '100%');
-      
-      const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-      stop1.setAttribute('offset', '0%');
-      stop1.setAttribute('stop-color', color);
-      stop1.setAttribute('stop-opacity', '0.9');
-      
-      const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
-      stop2.setAttribute('offset', '100%');
-      stop2.setAttribute('stop-color', color);
-      stop2.setAttribute('stop-opacity', '0.3');
-      
-      gradient.appendChild(stop1);
-      gradient.appendChild(stop2);
-      defs.appendChild(gradient);
-    });
-    svg.appendChild(defs);
-    
-    // Title (outside pan group)
+  const chartData = useMemo(() => {
+    const data = getFilteredData();
+    const result = data.map(item => ({
+      name: (() => {
+        if (currentLevel === 'month') {
+          if (item.name.startsWith('Month ')) {
+            const monthNumber = Number(item.name.replace('Month ', ''));
+            if (!isNaN(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+              const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+              return shortMonthNames[monthNumber - 1];
+            }
+          }
+          const monthNames = [
+            'January', 'February', 'March', 'April', 'May', 'June',
+            'July', 'August', 'September', 'October', 'November', 'December'
+          ];
+          const shortMonthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          const monthIndex = monthNames.indexOf(item.name);
+          if (monthIndex !== -1) {
+            return shortMonthNames[monthIndex];
+          }
+          const monthNumber = Number(item.name);
+          if (!isNaN(monthNumber) && monthNumber >= 1 && monthNumber <= 12) {
+            return shortMonthNames[monthNumber - 1];
+          }
+        }
+        return item.name;
+      })(),
+      value: item.revenue,
+      originalName: item.name
+    }));
+    return result;
+  }, [currentLevel, drilldownPath]);
+
+  const chartOptions: ApexOptions = useMemo(() => {
     const levelName = currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1);
     const pathString = drilldownPath.length > 0 ? ` > ${drilldownPath.map(p => p.value).join(' > ')}` : '';
-    const title = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    title.setAttribute('x', (width/2).toString());
-    title.setAttribute('y', '35');
-    title.setAttribute('text-anchor', 'middle');
-    title.setAttribute('font-size', '20');
-    title.setAttribute('font-weight', '600');
-    title.setAttribute('fill', '#373d3f');
-    title.textContent = `Revenue by ${levelName}${pathString}`;
-    svg.appendChild(title);
-    
-    // Grid lines
-    for (let i = 0; i <= 4; i++) {
-      const y = margin.top + (chartHeight / 4) * i;
-      const gridLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      gridLine.setAttribute('x1', margin.left.toString());
-      gridLine.setAttribute('y1', y.toString());
-      gridLine.setAttribute('x2', (margin.left + chartWidth).toString());
-      gridLine.setAttribute('y2', y.toString());
-      gridLine.setAttribute('stroke', '#f1f5f9');
-      gridLine.setAttribute('stroke-width', '1');
-      gridLine.setAttribute('stroke-dasharray', '3,3');
-      panGroup.appendChild(gridLine);
-    }
-    
-    // Bars with drilldown
-    data.forEach((item, index) => {
-      const barHeight = (item.revenue / maxValue) * chartHeight;
-      const x = margin.left + index * (barWidth + barSpacing);
-      const y = margin.top + chartHeight - barHeight;
-      
-      // Bar group for click handling
-      const barGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-      barGroup.style.cursor = 'pointer';
-      barGroup.addEventListener('click', () => handleDrillDown(item.name));
-      
-      // Bar with gradient
-      const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      rect.setAttribute('x', x.toString());
-      rect.setAttribute('y', y.toString());
-      rect.setAttribute('width', barWidth.toString());
-      rect.setAttribute('height', barHeight.toString());
-      rect.setAttribute('fill', `url(#gradient${index % colors.length})`);
-      rect.setAttribute('rx', '4');
-      rect.setAttribute('ry', '4');
-      rect.style.transition = 'all 0.3s ease';
-      
-      // ApexCharts-style hover effects
-      rect.addEventListener('mouseenter', () => {
-        rect.style.transform = 'scale(1.05)';
-        rect.style.filter = 'brightness(1.1)';
-        rect.style.transformOrigin = `${x + barWidth/2}px ${y + barHeight/2}px`;
-      });
-      rect.addEventListener('mouseleave', () => {
-        rect.style.transform = 'scale(1)';
-        rect.style.filter = 'brightness(1)';
-      });
-      
-      barGroup.appendChild(rect);
-      
-      // Value label
-      const valueText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      valueText.setAttribute('x', (x + barWidth/2).toString());
-      valueText.setAttribute('y', (y - 12).toString());
-      valueText.setAttribute('text-anchor', 'middle');
-      valueText.setAttribute('font-size', '13');
-      valueText.setAttribute('font-weight', '600');
-      valueText.setAttribute('fill', '#64748b');
-      valueText.setAttribute('pointer-events', 'none');
-      valueText.textContent = `$${(item.revenue / 1000).toFixed(1)}k`;
-      barGroup.appendChild(valueText);
-      
-      // Category label
-      const nameText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      nameText.setAttribute('x', (x + barWidth/2).toString());
-      nameText.setAttribute('y', (margin.top + chartHeight + 25).toString());
-      nameText.setAttribute('text-anchor', 'middle');
-      nameText.setAttribute('font-size', '12');
-      nameText.setAttribute('font-weight', '500');
-      nameText.setAttribute('fill', '#64748b');
-      nameText.setAttribute('transform', `rotate(-25, ${x + barWidth/2}, ${margin.top + chartHeight + 25})`);
-      nameText.setAttribute('pointer-events', 'none');
-      nameText.textContent = item.name;
-      barGroup.appendChild(nameText);
-      
-      panGroup.appendChild(barGroup);
-    });
-  };
-
-  const handleDrillDown = (value: string) => {
-    const nextLevel = getNextLevel(currentLevel);
-    if (!nextLevel) return;
-    
-    setDrilldownPath([...drilldownPath, { level: currentLevel, value }]);
-    setCurrentLevel(nextLevel);
-    setPanOffset({ x: 0, y: 0 });
-  };
-
-  const handleDrillUp = () => {
-    if (drilldownPath.length === 0) return;
-    
-    const newPath = drilldownPath.slice(0, -1);
-    setDrilldownPath(newPath);
-    
-    const prevLevel = getPreviousLevel(currentLevel);
-    if (prevLevel) {
-      setCurrentLevel(prevLevel);
-    }
-    setPanOffset({ x: 0, y: 0 });
-  };
+    return {
+      chart: {
+        type: 'bar',
+        height: 400,
+        toolbar: { show: true },
+        events: {
+          dataPointSelection: (event, chartContext, config) => {
+            const nextLevel = getNextLevel(currentLevel);
+            if (!nextLevel) return;
+            const clickedBar = chartData[config.dataPointIndex];
+            const clickedValue = clickedBar ? clickedBar.originalName : config.w.globals.categoryLabels[config.dataPointIndex];
+            setDrilldownPath([...drilldownPath, { level: currentLevel, value: clickedValue }]);
+            setCurrentLevel(nextLevel);
+          }
+        }
+      },
+      title: {
+        text: `Revenue by ${levelName}${pathString}`,
+        align: 'center',
+        style: { fontSize: '16px', fontWeight: 'bold' }
+      },
+      xaxis: {
+        categories: chartData.map(item => item.name),
+        labels: { rotate: -45, style: { fontSize: '10px' } }
+      },
+      yaxis: {
+        title: { text: 'Revenue ($)' },
+        labels: {
+          formatter: function(value) {
+            return `$${(value / 1000).toFixed(0)}K`;
+          }
+        }
+      },
+      tooltip: {
+        y: {
+          formatter: function(value) {
+            return `$${value.toLocaleString()}`;
+          }
+        }
+      },
+      plotOptions: {
+        bar: {
+          horizontal: false,
+          borderRadius: 4,
+          distributed: true,
+        }
+      },
+      colors: [
+        '#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3',
+        '#5f27cd', '#54a0ff', '#00b894', '#fdcb6e', '#e17055', '#00b8d4'
+      ],
+      dataLabels: {
+        enabled: false
+      },
+      grid: {
+        padding: { left: 20, right: 20 }
+      }
+    };
+  }, [chartData, currentLevel, drilldownPath]);
 
   const handleBreadcrumbClick = (index: number) => {
     const newPath = drilldownPath.slice(0, index);
     setDrilldownPath(newPath);
-    
     if (index === 0) {
       setCurrentLevel('product');
     } else {
-      const hierarchy = ['product', 'month', 'quarter', 'region'];
+      const hierarchy = ['product', 'region', 'quarter',  'month'];
       const levelIndex = hierarchy.indexOf(newPath[newPath.length - 1].level);
       setCurrentLevel(hierarchy[levelIndex + 1] as any);
     }
-    setPanOffset({ x: 0, y: 0 });
   };
-
-  const handleMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
-    setIsDragging(true);
-    setLastMousePos({ x: event.clientX, y: event.clientY });
-    event.currentTarget.style.cursor = 'grabbing';
-  };
-
-  const handleMouseMove = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!isDragging) return;
-    
-    const deltaX = event.clientX - lastMousePos.x;
-    const deltaY = event.clientY - lastMousePos.y;
-    
-    setPanOffset(prev => ({
-      x: prev.x + deltaX,
-      y: prev.y + deltaY
-    }));
-    
-    setLastMousePos({ x: event.clientX, y: event.clientY });
-  };
-
-  const handleMouseUp = (event: React.MouseEvent<HTMLDivElement>) => {
-    setIsDragging(false);
-    event.currentTarget.style.cursor = 'grab';
-  };
-
-  const handleWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    
-    if (event.deltaY > 0) {
-      // Scroll down - drill down deeper
-      const data = getFilteredData();
-      if (data.length > 0) {
-        handleDrillDown(data[0].name);
-      }
-    } else {
-      // Scroll up - drill up
-      handleDrillUp();
-    }
-  };
-
-  useEffect(() => {
-    const data = getFilteredData();
-    drawChart(data);
-  }, [currentLevel, drilldownPath, panOffset]);
 
   const breadcrumbItems = [
     { level: 'product', value: 'All Products' },
@@ -301,7 +196,6 @@ const ApexChartsDemo = () => {
             </React.Fragment>
           ))}
         </div>
-        
         <div className="flex items-center gap-2">
           {drilldownPath.length > 0 && (
             <Button
@@ -316,21 +210,31 @@ const ApexChartsDemo = () => {
           )}
         </div>
       </div>
-      
       <div className="flex justify-center">
-        <div 
-          ref={chartRef}
-          onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-          onWheel={handleWheel}
-        />
+        <div style={{ width: '100%', maxWidth: 800 }}>
+          <ReactApexChart
+            options={chartOptions}
+            series={[{ name: 'Revenue', data: chartData.map(item => item.value) }]}
+            type="bar"
+            height={400}
+          />
+        </div>
       </div>
-      
+      {perfStats && (
+        <div className="text-xs text-gray-500 mt-2">
+          <strong>Chart Load Time:</strong> {perfStats.last?.toFixed(2)} ms
+          {perfStats.avg !== undefined && (
+            <>
+              {' | '}<strong>Avg:</strong> {perfStats.avg.toFixed(2)} ms
+              {' | '}<strong>Min:</strong> {perfStats.min?.toFixed(2)} ms
+              {' | '}<strong>Max:</strong> {perfStats.max?.toFixed(2)} ms
+            </>
+          )}
+        </div>
+      )}
       <div className="text-sm text-gray-600 mt-4">
-        <strong>ApexCharts-style Implementation:</strong> Click on bars or use mouse wheel to drill down/up through data hierarchy. 
-        Drag to pan within current level. Path: Product → Month → Quarter → Region
+        <strong>ApexCharts Implementation:</strong> Click on bars to drill down through data hierarchy. 
+        Use breadcrumbs to navigate back. Path: Product → Region → Quarter → Month
       </div>
     </div>
   );
