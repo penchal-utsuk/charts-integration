@@ -1,10 +1,11 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import dataset from '@/data/hichartsData.json';
+import dataset from '@/data/output.json';
 import { aggregateDataByDimension } from '@/data/sampleData';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
+import { useChartPerformance } from '@/lib/useChartPerformance';
 
 const hierarchy = ['product', 'region', 'quarter', 'month'] as const;
 type Level = typeof hierarchy[number];
@@ -52,35 +53,23 @@ const HighchartsDemo = () => {
   const [drilldownPath, setDrilldownPath] = useState<DrilldownPath>([]);
   const [currentLevel, setCurrentLevel] = useState<Level>('product');
   const chartRef = useRef<HighchartsReact.RefObject>(null);
+  const { start, end } = useChartPerformance('Highcharts', 10);
 
-  const handleChartReady = useCallback((chart: Highcharts.Chart) => {
-    const chartContainer = chart.container;
-    if (chartContainer) {
-      chartContainer.addEventListener('wheel', (event: WheelEvent) => {
-        event.preventDefault();
-        if (event.deltaY > 0) {
-          // Scroll down - drill down deeper
-          if (drilldownPath.length > 0) {
-            const nextLevel = getNextLevel(currentLevel);
-            if (nextLevel) {
-              setDrilldownPath(prev => [...prev, { level: currentLevel, value: drilldownPath[drilldownPath.length - 1].value }]);
-              setCurrentLevel(nextLevel);
-            }
-          }
-        } else {
-          // Scroll up - drill up
-          if (drilldownPath.length > 0) {
-            const newPath = drilldownPath.slice(0, -1);
-            setDrilldownPath(newPath);
-            const prevLevel = getPreviousLevel(currentLevel);
-            if (prevLevel) {
-              setCurrentLevel(prevLevel);
-            }
-          }
-        }
-      });
-    }
-  }, [currentLevel, drilldownPath]);
+  useEffect(() => {
+    start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    start();
+  }, [drilldownPath, currentLevel, start]);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      end();
+    }, 0);
+    return () => clearTimeout(timeout);
+  }, [drilldownPath, currentLevel, end]);
 
   const handleBreadcrumbClick = (index: number) => {
     const newPath = drilldownPath.slice(0, index);
@@ -97,6 +86,85 @@ const HighchartsDemo = () => {
     { level: 'product', value: 'All Products' },
     ...drilldownPath
   ];
+
+  const options = useMemo(() => ({
+    chart: {
+      type: 'column',
+      zooming: { type: 'x' },
+      panKey: 'shift',
+      resetZoomButton: {
+        theme: {
+          fill: 'white',
+          stroke: 'silver',
+          r: 0,
+          states: {
+            hover: {
+              fill: '#41739D',
+              style: { color: 'white' }
+            }
+          }
+        }
+      }
+    },
+    title: {
+      text: `Revenue by ${currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1)}`,
+      style: { fontSize: '16px', fontWeight: 'bold' }
+    },
+    subtitle: {
+      text: typeof document !== 'undefined' && document.ontouchstart === undefined ?
+        'Click and drag in the plot area to zoom in' :
+        'Pinch the chart to zoom in'
+    },
+    xAxis: {
+      categories: getFilteredData(drilldownPath, currentLevel).map(item => item.name),
+      title: { text: currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1) },
+      labels: { rotation: -45, style: { fontSize: '10px' } },
+      min: 0,
+      max: getFilteredData(drilldownPath, currentLevel).length - 1,
+      minRange: 1
+    },
+    yAxis: {
+      title: { text: 'Revenue ($)' },
+      labels: {
+        formatter: function() {
+          return '$' + ((this.value as number) / 1000).toFixed(0) + 'K';
+        }
+      }
+    },
+    legend: { enabled: false },
+    plotOptions: {
+      column: {
+        pointPadding: 0.1,
+        borderWidth: 0,
+        cursor: 'pointer',
+        colorByPoint: true,
+        colors: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'],
+        states: { hover: { brightness: 0.1 } },
+        allowPointSelect: false,
+        point: {
+          events: {
+            click: function(this: Highcharts.Point) {
+              const nextLevel = getNextLevel(currentLevel);
+              if (!nextLevel) return;
+              const clickedData = getFilteredData(drilldownPath, currentLevel).find(item => item.name === this.name);
+              const clickedValue = clickedData ? clickedData.name : this.name;
+              setDrilldownPath(prev => [...prev, { level: currentLevel, value: clickedValue }]);
+              setCurrentLevel(nextLevel);
+            }
+          }
+        }
+      }
+    },
+    tooltip: {
+      headerFormat: '<b>{point.key}</b><br/>',
+      pointFormat: 'Revenue: <b>${point.y:,.0f}</b>'
+    },
+    series: [{
+      type: 'column',
+      name: 'Revenue',
+      data: getFilteredData(drilldownPath, currentLevel).map(item => ({ y: item.revenue, name: item.name }))
+    }]
+  }), [drilldownPath, currentLevel]);
 
   return (
     <div className="space-y-4">
@@ -133,90 +201,12 @@ const HighchartsDemo = () => {
           <HighchartsReact
             ref={chartRef}
             highcharts={Highcharts}
-            options={{
-              chart: {
-                type: 'column',
-                zooming: { type: 'x' },
-                panKey: 'shift',
-                resetZoomButton: {
-                  theme: {
-                    fill: 'white',
-                    stroke: 'silver',
-                    r: 0,
-                    states: {
-                      hover: {
-                        fill: '#41739D',
-                        style: { color: 'white' }
-                      }
-                    }
-                  }
-                }
-              },
-              title: {
-                text: `Revenue by ${currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1)}`,
-                style: { fontSize: '16px', fontWeight: 'bold' }
-              },
-              subtitle: {
-                text: typeof document !== 'undefined' && document.ontouchstart === undefined ?
-                  'Click and drag in the plot area to zoom in' :
-                  'Pinch the chart to zoom in'
-              },
-              xAxis: {
-                categories: getFilteredData(drilldownPath, currentLevel).map(item => item.name),
-                title: { text: currentLevel.charAt(0).toUpperCase() + currentLevel.slice(1) },
-                labels: { rotation: -45, style: { fontSize: '10px' } },
-                min: 0,
-                max: getFilteredData(drilldownPath, currentLevel).length - 1,
-                minRange: 1
-              },
-              yAxis: {
-                title: { text: 'Revenue ($)' },
-                labels: {
-                  formatter: function() {
-                    return '$' + ((this.value as number) / 1000).toFixed(0) + 'K';
-                  }
-                }
-              },
-              legend: { enabled: false },
-              plotOptions: {
-                column: {
-                  pointPadding: 0.1,
-                  borderWidth: 0,
-                  cursor: 'pointer',
-                  colorByPoint: true,
-                  colors: ['#ff6b6b', '#4ecdc4', '#45b7d1', '#96ceb4', '#feca57', '#ff9ff3'],
-                  states: { hover: { brightness: 0.1 } },
-                  allowPointSelect: false,
-                  point: {
-                    events: {
-                      click: function(this: Highcharts.Point) {
-                        const nextLevel = getNextLevel(currentLevel);
-                        if (!nextLevel) return;
-                        const clickedData = getFilteredData(drilldownPath, currentLevel).find(item => item.name === this.name);
-                        const clickedValue = clickedData ? clickedData.name : this.name;
-                        setDrilldownPath(prev => [...prev, { level: currentLevel, value: clickedValue }]);
-                        setCurrentLevel(nextLevel);
-                      }
-                    }
-                  }
-                }
-              },
-              tooltip: {
-                headerFormat: '<b>{point.key}</b><br/>',
-                pointFormat: 'Revenue: <b>${point.y:,.0f}</b>'
-              },
-              series: [{
-                type: 'column',
-                name: 'Revenue',
-                data: getFilteredData(drilldownPath, currentLevel).map(item => ({ y: item.revenue, name: item.name }))
-              }]
-            }}
-            callback={handleChartReady}
+            options={options}
           />
         </div>
       </div>
       <div className="text-sm text-gray-600 mt-4">
-        <strong>Highcharts Implementation:</strong> Click on bars or scroll up/down to drill down through data hierarchy.
+        <strong>Highcharts Implementation:</strong> Click on bars to drill down through data hierarchy.
         Use breadcrumbs to navigate back. Path: Product → Region → Quarter → Month
       </div>
     </div>
