@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import * as d3 from 'd3';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
-import dataset from '@/data/output.json';
+import dataset from '@/data/dataset.json';
 import { aggregateDataByDimension } from '@/data/sampleData';
 import { useChartPerformance } from '@/lib/useChartPerformance';
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
-import dataset from '@/data/output.json';
+import dataset from '@/data/dataset.json';
 import { aggregateDataByDimension } from '@/data/sampleData';
 import { useChartPerformance } from '@/lib/useChartPerformance';
 

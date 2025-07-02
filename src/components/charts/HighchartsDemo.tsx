@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import Highcharts from 'highcharts';
 import HighchartsReact from 'highcharts-react-official';
-import dataset from '@/data/output.json';
+import dataset from '@/data/dataset.json';
 import { aggregateDataByDimension } from '@/data/sampleData';
 import { Button } from '@/components/ui/button';
 import { ChevronLeft } from 'lucide-react';
